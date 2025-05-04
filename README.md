@@ -91,16 +91,111 @@ RAC-Abugida-Management streamlines organizational workflows through a modular in
 
 ## 🧱 Database Schema
 
-### `events` Table (it's not final schema)
-| Field          | Type                      | Description                |
-|----------------|---------------------------|----------------------------|
-| `id`           | UUID (Primary Key)        | Auto-generated             |
-| `title`        | TEXT                      | Required                   |
-| `description`  | TEXT                      | Optional                   |
-| `date`         | TIMESTAMP WITH TIME ZONE  | Required                   |
-| `organizer_id` | UUID (FK to auth.users)   | Creator ID                 |
-| `created_at`   | TIMESTAMP WITH TIME ZONE  | Default `NOW()`            |
 
+## Overview
+This document describes the database schema for the project management and event collaboration system. The database is designed to support user profiles, role-based access control, event and project management with multimedia support, and collaboration features.
+
+## Database Schema
+
+### Tables Structure
+
+#### 1. Profiles
+- Stores user profile information that extends the authentication system
+- **Fields**:
+  - `user_id`: Primary key referencing auth.users
+  - `designation`: User's job title/position
+  - `profile_image`: URL to the user's profile picture
+  - `created_at`, `updated_at`: Timestamps
+
+#### 2. Roles
+- Defines available system roles with permissions
+- **Fields**:
+  - `id`: Auto-incrementing primary key
+  - `role_name`: Predefined role names (Admin, Organizer, Member, Viewer)
+  - `description`: Role description
+  - `created_at`: Creation timestamp
+
+#### 3. User Roles
+- Junction table assigning roles to users
+- **Fields**:
+  - `user_id`: References auth.users
+  - `role_id`: References roles
+  - `assigned_at`: Assignment timestamp
+  - Unique constraint on (user_id, role_id)
+
+#### 4. Events
+- Manages event information
+- **Fields**:
+  - `title`, `description`: Event details
+  - `start_time`, `end_time`: Event timing
+  - `owner_id`: Event creator reference
+  - `created_at`, `updated_at`: Timestamps
+
+#### 5. Event Images
+- Stores images associated with events
+- **Fields**:
+  - `event_id`: References events
+  - `image_url`: Image location
+  - `is_primary`: Flags primary image
+  - `uploaded_at`: Upload timestamp
+  - Unique constraint ensuring one primary image per event
+
+#### 6. Projects
+- Manages project information
+- **Fields**:
+  - `name`, `description`: Project details
+  - `status`: Project state (default 'Active')
+  - `owner_id`: Project creator reference
+  - `created_at`, `updated_at`: Timestamps
+
+#### 7. Project Images
+- Stores images associated with projects
+- **Fields**:
+  - `project_id`: References projects
+  - `image_url`: Image location
+  - `is_primary`: Flags primary image
+  - `uploaded_at`: Upload timestamp
+  - Unique constraint ensuring one primary image per project
+
+#### 8. Event Collaborators
+- Manages user participation in events
+- **Fields**:
+  - `event_id`, `user_id`: Composite reference
+  - `role_id`: Collaborator's role
+  - `assigned_at`: Assignment timestamp
+  - Unique constraint per user per event
+
+#### 9. Project Collaborators
+- Manages user participation in projects
+- **Fields**:
+  - `project_id`, `user_id`: Composite reference
+  - `role_id`: Collaborator's role
+  - `assigned_at`: Assignment timestamp
+  - Unique constraint per user per project
+
+#### 10. Dashboard Metrics
+- Stores aggregated system metrics
+- **Fields**:
+  - `metric_name`: Identifier for the metric
+  - `metric_value`: JSON data for flexible storage
+  - `related_entity_type`: Type of entity (Event/Project/General)
+  - `related_entity_id`: Optional entity reference
+  - `created_at`, `updated_at`: Timestamps
+
+## Key Relationships
+- Users have profiles (`profiles` table extends auth.users)
+- Users can have multiple roles through `user_roles` junction table
+- Both events and projects:
+  - Have owners (users)
+  - Support multiple images with one primary image
+  - Have collaborators with specific roles
+- Dashboard metrics can be associated with specific entities or be general
+
+## Constraints
+- Role names are restricted to specific values
+- Only one primary image allowed per event/project
+- Each user can only have one role per event/project
+- Cascading deletes for dependent records where appropriate
 > Similar tables exist for `projects`, `dashboard_metrics`, and `user_roles`
 
 ## 🔐 Role-Based Access Control
