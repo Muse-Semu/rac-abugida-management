@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useAppContext } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { setAuthState } from '../store/slices/authSlice';
 
 export const useAuth = () => {
-  const { authState, dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
+  const authState = useAppSelector((state) => state.auth);
   const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
@@ -24,25 +26,19 @@ export const useAuth = () => {
 
           if (roleError) throw roleError;
 
-          dispatch({
-            type: 'SET_AUTH_STATE',
-            payload: {
-              user: session.user,
-              role: userRole.roles,
-              isLoading: false,
-              error: null,
-            },
-          });
+          dispatch(setAuthState({
+            user: session.user,
+            role: userRole.roles,
+            isLoading: false,
+            error: null,
+          }));
         }
       } catch (error) {
         console.error('Session check error:', error);
-        dispatch({
-          type: 'SET_AUTH_STATE',
-          payload: {
-            error: error instanceof Error ? error.message : 'An error occurred',
-            isLoading: false,
-          },
-        });
+        dispatch(setAuthState({
+          error: error instanceof Error ? error.message : 'An error occurred',
+          isLoading: false,
+        }));
       } finally {
         setIsInitialized(true);
       }
@@ -64,35 +60,26 @@ export const useAuth = () => {
 
             if (roleError) throw roleError;
 
-            dispatch({
-              type: 'SET_AUTH_STATE',
-              payload: {
-                user: session.user,
-                role: userRole.roles,
-                isLoading: false,
-                error: null,
-              },
-            });
-          } catch (error) {
-            console.error('Role fetch error:', error);
-            dispatch({
-              type: 'SET_AUTH_STATE',
-              payload: {
-                error: error instanceof Error ? error.message : 'An error occurred',
-                isLoading: false,
-              },
-            });
-          }
-        } else if (event === 'SIGNED_OUT') {
-          dispatch({
-            type: 'SET_AUTH_STATE',
-            payload: {
-              user: null,
-              role: null,
+            dispatch(setAuthState({
+              user: session.user,
+              role: userRole.roles,
               isLoading: false,
               error: null,
-            },
-          });
+            }));
+          } catch (error) {
+            console.error('Role fetch error:', error);
+            dispatch(setAuthState({
+              error: error instanceof Error ? error.message : 'An error occurred',
+              isLoading: false,
+            }));
+          }
+        } else if (event === 'SIGNED_OUT') {
+          dispatch(setAuthState({
+            user: null,
+            role: null,
+            isLoading: false,
+            error: null,
+          }));
         }
       }
     );
@@ -104,7 +91,7 @@ export const useAuth = () => {
 
   const signIn = async (email: string, password: string) => {
     try {
-      dispatch({ type: 'SET_AUTH_STATE', payload: { isLoading: true, error: null } });
+      dispatch(setAuthState({ isLoading: true, error: null }));
       
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -128,33 +115,27 @@ export const useAuth = () => {
 
         if (roleError) throw roleError;
 
-        dispatch({
-          type: 'SET_AUTH_STATE',
-          payload: {
-            user: data.session.user,
-            role: userRole.roles,
-            isLoading: false,
-            error: null,
-          },
-        });
+        dispatch(setAuthState({
+          user: data.session.user,
+          role: userRole.roles,
+          isLoading: false,
+          error: null,
+        }));
       }
     } catch (error) {
-      dispatch({
-        type: 'SET_AUTH_STATE',
-        payload: {
-          error: error instanceof Error ? error.message : 'An error occurred',
-          isLoading: false,
-        },
-      });
+      dispatch(setAuthState({
+        error: error instanceof Error ? error.message : 'An error occurred',
+        isLoading: false,
+      }));
       throw error;
     } finally {
-      dispatch({ type: 'SET_AUTH_STATE', payload: { isLoading: false } });
+      dispatch(setAuthState({ isLoading: false }));
     }
   };
 
   const register = async (email: string, password: string) => {
     try {
-      dispatch({ type: 'SET_AUTH_STATE', payload: { isLoading: true, error: null } });
+      dispatch(setAuthState({ isLoading: true, error: null }));
       
       // First, check if the Member role exists
       let memberRoleId: number;
@@ -228,33 +209,27 @@ export const useAuth = () => {
         await signIn(email, password);
       }
     } catch (error) {
-      dispatch({
-        type: 'SET_AUTH_STATE',
-        payload: {
-          error: error instanceof Error ? error.message : 'An error occurred',
-          isLoading: false,
-        },
-      });
+      dispatch(setAuthState({
+        error: error instanceof Error ? error.message : 'An error occurred',
+        isLoading: false,
+      }));
       throw error;
     } finally {
-      dispatch({ type: 'SET_AUTH_STATE', payload: { isLoading: false } });
+      dispatch(setAuthState({ isLoading: false }));
     }
   };
 
   const signOut = async () => {
     try {
-      dispatch({ type: 'SET_AUTH_STATE', payload: { isLoading: true } });
+      dispatch(setAuthState({ isLoading: true }));
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
     } catch (error) {
       console.error('Sign out error:', error);
-      dispatch({
-        type: 'SET_AUTH_STATE',
-        payload: {
-          error: error instanceof Error ? error.message : 'An error occurred',
-          isLoading: false,
-        },
-      });
+      dispatch(setAuthState({
+        error: error instanceof Error ? error.message : 'An error occurred',
+        isLoading: false,
+      }));
     }
   };
 

@@ -1,10 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { useAppContext } from '../../context/AppContext';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { supabase } from '../../supabaseClient';
 import { Event } from '../../types';
+import {
+  setEvents,
+  addEvent,
+  updateEvent,
+  removeEvent,
+  setLoading,
+  setError,
+} from '../../store/slices/eventSlice';
 
 export const EventList: React.FC = () => {
-  const { eventState, dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
+  const { events, isLoading, error } = useAppSelector((state) => state.events);
   const [isCreating, setIsCreating] = useState(false);
   const [newEvent, setNewEvent] = useState<Partial<Event>>({
     title: '',
@@ -16,7 +25,7 @@ export const EventList: React.FC = () => {
   useEffect(() => {
     const fetchEvents = async () => {
       try {
-        dispatch({ type: 'SET_EVENT_STATE', payload: { isLoading: true } });
+        dispatch(setLoading(true));
         
         const { data: events, error } = await supabase
           .from('events')
@@ -25,22 +34,12 @@ export const EventList: React.FC = () => {
 
         if (error) throw error;
 
-        dispatch({
-          type: 'SET_EVENT_STATE',
-          payload: {
-            events: events as Event[],
-            isLoading: false,
-            error: null,
-          },
-        });
+        dispatch(setEvents(events as Event[]));
+        dispatch(setError(null));
       } catch (error) {
-        dispatch({
-          type: 'SET_EVENT_STATE',
-          payload: {
-            error: error instanceof Error ? error.message : 'An error occurred',
-            isLoading: false,
-          },
-        });
+        dispatch(setError(error instanceof Error ? error.message : 'An error occurred'));
+      } finally {
+        dispatch(setLoading(false));
       }
     };
 
@@ -58,33 +57,11 @@ export const EventList: React.FC = () => {
         },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            const newEvent = payload.new as Event;
-            dispatch({
-              type: 'SET_EVENT_STATE',
-              payload: {
-                events: [...eventState.events, newEvent],
-              },
-            });
+            dispatch(addEvent(payload.new as Event));
           } else if (payload.eventType === 'UPDATE') {
-            const updatedEvent = payload.new as Event;
-            dispatch({
-              type: 'SET_EVENT_STATE',
-              payload: {
-                events: eventState.events.map((event) =>
-                  event.id === updatedEvent.id ? updatedEvent : event
-                ),
-              },
-            });
+            dispatch(updateEvent(payload.new as Event));
           } else if (payload.eventType === 'DELETE') {
-            const deletedEvent = payload.old as Event;
-            dispatch({
-              type: 'SET_EVENT_STATE',
-              payload: {
-                events: eventState.events.filter(
-                  (event) => event.id !== deletedEvent.id
-                ),
-              },
-            });
+            dispatch(removeEvent(payload.old.id));
           }
         }
       )
@@ -114,16 +91,11 @@ export const EventList: React.FC = () => {
         end_time: '',
       });
     } catch (error) {
-      dispatch({
-        type: 'SET_EVENT_STATE',
-        payload: {
-          error: error instanceof Error ? error.message : 'An error occurred',
-        },
-      });
+      dispatch(setError(error instanceof Error ? error.message : 'An error occurred'));
     }
   };
 
-  if (eventState.isLoading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
@@ -207,12 +179,12 @@ export const EventList: React.FC = () => {
         </form>
       )}
 
-      {eventState.error && (
-        <div className="text-red-500 text-center p-4">{eventState.error}</div>
+      {error && (
+        <div className="text-red-500 text-center p-4">{error}</div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {eventState.events.map((event) => (
+        {events.map((event) => (
           <div
             key={event.id}
             className="bg-white p-6 rounded-lg shadow-md"

@@ -1,10 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { useAppContext } from '../../context/AppContext';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { supabase } from '../../supabaseClient';
 import { Project } from '../../types';
+import {
+  setProjects,
+  addProject,
+  updateProject,
+  removeProject,
+  setLoading,
+  setError,
+} from '../../store/slices/projectSlice';
 
 export const ProjectList: React.FC = () => {
-  const { projectState, dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
+  const { projects, isLoading, error } = useAppSelector((state) => state.projects);
   const [isCreating, setIsCreating] = useState(false);
   const [newProject, setNewProject] = useState<Partial<Project>>({
     name: '',
@@ -15,7 +24,7 @@ export const ProjectList: React.FC = () => {
   useEffect(() => {
     const fetchProjects = async () => {
       try {
-        dispatch({ type: 'SET_PROJECT_STATE', payload: { isLoading: true } });
+        dispatch(setLoading(true));
         
         const { data: projects, error } = await supabase
           .from('projects')
@@ -24,22 +33,12 @@ export const ProjectList: React.FC = () => {
 
         if (error) throw error;
 
-        dispatch({
-          type: 'SET_PROJECT_STATE',
-          payload: {
-            projects: projects as Project[],
-            isLoading: false,
-            error: null,
-          },
-        });
+        dispatch(setProjects(projects as Project[]));
+        dispatch(setError(null));
       } catch (error) {
-        dispatch({
-          type: 'SET_PROJECT_STATE',
-          payload: {
-            error: error instanceof Error ? error.message : 'An error occurred',
-            isLoading: false,
-          },
-        });
+        dispatch(setError(error instanceof Error ? error.message : 'An error occurred'));
+      } finally {
+        dispatch(setLoading(false));
       }
     };
 
@@ -57,33 +56,11 @@ export const ProjectList: React.FC = () => {
         },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            const newProject = payload.new as Project;
-            dispatch({
-              type: 'SET_PROJECT_STATE',
-              payload: {
-                projects: [...projectState.projects, newProject],
-              },
-            });
+            dispatch(addProject(payload.new as Project));
           } else if (payload.eventType === 'UPDATE') {
-            const updatedProject = payload.new as Project;
-            dispatch({
-              type: 'SET_PROJECT_STATE',
-              payload: {
-                projects: projectState.projects.map((project) =>
-                  project.id === updatedProject.id ? updatedProject : project
-                ),
-              },
-            });
+            dispatch(updateProject(payload.new as Project));
           } else if (payload.eventType === 'DELETE') {
-            const deletedProject = payload.old as Project;
-            dispatch({
-              type: 'SET_PROJECT_STATE',
-              payload: {
-                projects: projectState.projects.filter(
-                  (project) => project.id !== deletedProject.id
-                ),
-              },
-            });
+            dispatch(removeProject(payload.old.id));
           }
         }
       )
@@ -112,16 +89,11 @@ export const ProjectList: React.FC = () => {
         status: 'Active',
       });
     } catch (error) {
-      dispatch({
-        type: 'SET_PROJECT_STATE',
-        payload: {
-          error: error instanceof Error ? error.message : 'An error occurred',
-        },
-      });
+      dispatch(setError(error instanceof Error ? error.message : 'An error occurred'));
     }
   };
 
-  if (projectState.isLoading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
@@ -196,12 +168,12 @@ export const ProjectList: React.FC = () => {
         </form>
       )}
 
-      {projectState.error && (
-        <div className="text-red-500 text-center p-4">{projectState.error}</div>
+      {error && (
+        <div className="text-red-500 text-center p-4">{error}</div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {projectState.projects.map((project) => (
+        {projects.map((project) => (
           <div
             key={project.id}
             className="bg-white p-6 rounded-lg shadow-md"

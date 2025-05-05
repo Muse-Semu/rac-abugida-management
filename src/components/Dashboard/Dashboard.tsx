@@ -1,16 +1,23 @@
 import React, { useEffect } from 'react';
-import { useAppContext } from '../../context/AppContext';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { DashboardMetric } from '../../types';
 import { supabase } from '../../supabaseClient';
+import {
+  setMetrics,
+  addMetric,
+  updateMetric,
+  setLoading,
+  setError,
+} from '../../store/slices/dashboardSlice';
 
 export const Dashboard: React.FC = () => {
-  const { dashboardState, dispatch } = useAppContext();
+  const dispatch = useAppDispatch();
+  const { metrics, isLoading, error } = useAppSelector((state) => state.dashboard);
 
-  
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
-        dispatch({ type: 'SET_DASHBOARD_STATE', payload: { isLoading: true } });
+        dispatch(setLoading(true));
         
         const { data: metrics, error } = await supabase
           .from('dashboard_metrics')
@@ -19,22 +26,12 @@ export const Dashboard: React.FC = () => {
 
         if (error) throw error;
 
-        dispatch({
-          type: 'SET_DASHBOARD_STATE',
-          payload: {
-            metrics: metrics as DashboardMetric[],
-            isLoading: false,
-            error: null,
-          },
-        });
+        dispatch(setMetrics(metrics as DashboardMetric[]));
+        dispatch(setError(null));
       } catch (error) {
-        dispatch({
-          type: 'SET_DASHBOARD_STATE',
-          payload: {
-            error: error instanceof Error ? error.message : 'An error occurred',
-            isLoading: false,
-          },
-        });
+        dispatch(setError(error instanceof Error ? error.message : 'An error occurred'));
+      } finally {
+        dispatch(setLoading(false));
       }
     };
 
@@ -52,13 +49,7 @@ export const Dashboard: React.FC = () => {
         },
         (payload) => {
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            const newMetric = payload.new as DashboardMetric;
-            dispatch({
-              type: 'SET_DASHBOARD_STATE',
-              payload: {
-                metrics: [newMetric, ...dashboardState.metrics],
-              },
-            });
+            dispatch(addMetric(payload.new as DashboardMetric));
           }
         }
       )
@@ -69,7 +60,7 @@ export const Dashboard: React.FC = () => {
     };
   }, [dispatch]);
 
-  if (dashboardState.isLoading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
@@ -77,10 +68,10 @@ export const Dashboard: React.FC = () => {
     );
   }
 
-  if (dashboardState.error) {
+  if (error) {
     return (
       <div className="text-red-500 text-center p-4">
-        Error: {dashboardState.error}
+        Error: {error}
       </div>
     );
   }
@@ -89,7 +80,7 @@ export const Dashboard: React.FC = () => {
     <div className="p-6">
       <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {dashboardState.metrics.map((metric) => (
+        {metrics.map((metric) => (
           <div
             key={metric.id}
             className="bg-white p-6 rounded-lg shadow-md"

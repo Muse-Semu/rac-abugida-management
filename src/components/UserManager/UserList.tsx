@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { useAppContext } from '../../context/AppContext';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { supabase } from '../../supabaseClient';
 import { User, Role, UserRole } from '../../types';
 
 export const UserList: React.FC = () => {
-  const { authState } = useAppContext();
+  const dispatch = useAppDispatch();
+  const { role } = useAppSelector((state) => state.auth);
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [userRoles, setUserRoles] = useState<UserRole[]>([]);
@@ -166,7 +167,7 @@ export const UserList: React.FC = () => {
                     <div className="text-sm text-gray-900">{user.designation}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {authState.role?.role_name === 'Admin' ? (
+                    {role?.role_name === 'Admin' ? (
                       <select
                         value={role?.id || ''}
                         onChange={(e) => handleRoleChange(user.id, Number(e.target.value))}
