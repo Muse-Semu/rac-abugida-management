@@ -1,12 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
 
 export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
-  const { signIn, register, isLoading, error } = useAuth();
+  const { signIn, register, isLoading, error, isInitialized, user } = useAuth();
+  const navigate = useNavigate();
+
+  // Redirect if user is already authenticated
+  useEffect(() => {
+    if (isInitialized && user) {
+      navigate('/');
+    }
+  }, [isInitialized, user, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,7 +26,10 @@ export const Login: React.FC = () => {
         }
         await register(email, password);
       } else {
-        await signIn(email, password);
+        const success = await signIn(email, password);
+        if (success) {
+          navigate('/');
+        }
       }
     } catch (error) {
       console.error('Auth error:', error);
