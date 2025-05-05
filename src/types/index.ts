@@ -23,7 +23,7 @@ export interface Event {
   description: string;
   start_time: string;
   end_time: string;
-  owner_id: string;
+  organizer_id: string;
   created_at: string;
   updated_at: string;
 }
@@ -33,7 +33,7 @@ export interface Project {
   name: string;
   description: string;
   status: 'Active' | 'Completed' | 'On Hold';
-  owner_id: string;
+  organizer_id: string;
   created_at: string;
   updated_at: string;
 }
