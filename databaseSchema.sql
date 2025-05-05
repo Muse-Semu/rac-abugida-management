@@ -40,6 +40,13 @@ CREATE TABLE events (
     description TEXT,
     start_time TIMESTAMP WITH TIME ZONE NOT NULL,
     end_time TIMESTAMP WITH TIME ZONE,
+    location VARCHAR(255), -- Event location
+    status VARCHAR(50) DEFAULT 'Scheduled', -- e.g., Scheduled, Ongoing, Completed
+    event_type VARCHAR(50) CHECK (event_type IN ('Public', 'Private', 'Internal')),
+    tags VARCHAR(255)[], -- Array of tags for categorization
+    attendees_count INTEGER DEFAULT 0, -- Number of attendees
+    max_attendees INTEGER, -- Maximum number of attendees
+    is_recurring BOOLEAN DEFAULT FALSE, -- Indicates if the event is recurring
     owner_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -61,6 +68,16 @@ CREATE TABLE projects (
     name VARCHAR(255) NOT NULL,
     description TEXT,
     status VARCHAR(50) DEFAULT 'Active',
+    start_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    end_date TIMESTAMP WITH TIME ZONE,
+    budget NUMERIC(15, 2), -- Budget for the project
+    progress_percentage INTEGER DEFAULT 0 CHECK (progress_percentage BETWEEN 0 AND 100),
+    tags VARCHAR(255)[], -- Array of tags for categorization
+    team_members_count INTEGER DEFAULT 0, -- Number of team members
+    max_team_members INTEGER, -- Maximum number of team members
+    is_archived BOOLEAN DEFAULT FALSE, -- Indicates if the project is archived
+    project_type VARCHAR(50) CHECK (project_type IN ('Internal', 'External')),
+    project_manager_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     owner_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
