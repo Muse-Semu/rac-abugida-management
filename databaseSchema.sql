@@ -77,6 +77,8 @@ CREATE TABLE projects (
     max_team_members INTEGER, -- Maximum number of team members
     is_archived BOOLEAN DEFAULT FALSE, -- Indicates if the project is archived
     project_type VARCHAR(50) CHECK (project_type IN ('Internal', 'External')),
+    project_target NUMERIC(15, 2), -- Target for the project
+    project_target_type VARCHAR(50) CHECK (project_target_type IN ('Revenue', 'Cost')),
     project_manager_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     owner_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
