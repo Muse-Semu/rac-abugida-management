@@ -16,10 +16,6 @@ export const useAuth = () => {
         
         if (error) throw error;
 
-        console.log('session', session);
-        console.log('error', error);
-
-        
         if (session) {
           // Fetch user role and profile
           const { data: userRole, error: roleError } = await supabase
@@ -28,14 +24,18 @@ export const useAuth = () => {
             .eq('user_id', session.user.id)
             .single();
 
-        console.log('userRole', userRole);
-        console.log('roleError', roleError);
-
           if (roleError) throw roleError;
 
           dispatch(setAuthState({
             user: session.user,
             role: userRole.roles,
+            isLoading: false,
+            error: null,
+          }));
+        } else {
+          dispatch(setAuthState({
+            user: null,
+            role: null,
             isLoading: false,
             error: null,
           }));
@@ -128,7 +128,10 @@ export const useAuth = () => {
           isLoading: false,
           error: null,
         }));
+
+        return true; // Return true to indicate successful sign-in
       }
+      return false;
     } catch (error) {
       dispatch(setAuthState({
         error: error instanceof Error ? error.message : 'An error occurred',
