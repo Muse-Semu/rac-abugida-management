@@ -1,0 +1,395 @@
+-- Enabling required PostgreSQL extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Profiles table to store additional user information
+CREATE TABLE profiles (
+    user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    full_name VARCHAR(100) NOT NULL,
+    date_of_birth DATE, -- Date of birth
+    designation VARCHAR(100), -- e.g., "Project Manager", "Developer"
+    profile_image VARCHAR(255), -- URL or path to profile image,
+    bio TEXT, -- Short biography or description
+    contact_number VARCHAR(20), -- Contact number
+    address TEXT, -- Physical address
+    social_links JSONB, -- JSON object for social media links
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Roles table to define available roles
+CREATE TABLE roles (
+    id SERIAL PRIMARY KEY,
+    role_name VARCHAR(50) UNIQUE NOT NULL CHECK (role_name IN ('Admin', 'Organizer', 'Member', 'Viewer')),
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- User roles junction table to assign roles to users
+CREATE TABLE user_roles (
+    id SERIAL PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    role_id INTEGER REFERENCES roles(id) ON DELETE RESTRICT,
+    assigned_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, role_id)
+);
+
+-- Events table for event management
+CREATE TABLE events (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+    end_time TIMESTAMP WITH TIME ZONE,
+    owner_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Event images table for storing multiple images per event
+CREATE TABLE event_images (
+    id SERIAL PRIMARY KEY,
+    event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
+    image_url VARCHAR(255) NOT NULL, -- URL or path to image
+    is_primary BOOLEAN DEFAULT FALSE, -- Marks the primary image
+    uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(event_id, is_primary) -- Ensures only one primary image per event
+);
+
+-- Projects table for project management
+CREATE TABLE projects (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    status VARCHAR(50) DEFAULT 'Active',
+    owner_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Project images table for storing multiple images per project
+CREATE TABLE project_images (
+    id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    image_url VARCHAR(255) NOT NULL, -- URL or path to image
+    is_primary BOOLEAN DEFAULT FALSE, -- Marks the primary image
+    uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, is_primary) -- Ensures only one primary image per project
+);
+
+-- Event collaborators (junction table for user-event collaboration)
+CREATE TABLE event_collaborators (
+    id SERIAL PRIMARY KEY,
+    event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    role_id INTEGER REFERENCES roles(id) ON DELETE RESTRICT,
+    assigned_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(event_id, user_id)
+);
+
+-- Project collaborators (junction table for user-project collaboration)
+CREATE TABLE project_collaborators (
+    id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    role_id INTEGER REFERENCES roles(id) ON DELETE RESTRICT,
+    assigned_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, user_id)
+);
+
+-- Dashboard metrics table for aggregated metrics
+CREATE TABLE dashboard_metrics (
+    id SERIAL PRIMARY KEY,
+    metric_name VARCHAR(100) NOT NULL,
+    metric_value JSONB NOT NULL, -- Store flexible metric data
+    related_entity_type VARCHAR(50) CHECK (related_entity_type IN ('Event', 'Project', 'General')),
+    related_entity_id INTEGER, -- Optional reference to event/project
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for performance
+CREATE INDEX idx_profiles_user_id ON profiles(user_id);
+CREATE INDEX idx_user_roles_user_id ON user_roles(user_id);
+CREATE INDEX idx_events_owner_id ON events(owner_id);
+CREATE INDEX idx_event_images_event_id ON event_images(event_id);
+CREATE INDEX idx_projects_owner_id ON projects(owner_id);
+CREATE INDEX idx_project_images_project_id ON project_images(project_id);
+CREATE INDEX idx_event_collaborators_event_id ON event_collaborators(event_id);
+CREATE INDEX idx_project_collaborators_project_id ON project_collaborators(project_id);
+CREATE INDEX idx_dashboard_metrics_entity_type ON dashboard_metrics(related_entity_type);
+
+-- RLS Policies
+-- Enable RLS on all tables
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE event_images ENABLE ROW LEVEL SECURITY;
+ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_images ENABLE ROW LEVEL SECURITY;
+ALTER TABLE event_collaborators ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_collaborators ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dashboard_metrics ENABLE ROW LEVEL SECURITY;
+
+-- Helper function to get user role
+CREATE OR REPLACE FUNCTION get_user_role(user_uuid UUID)
+RETURNS VARCHAR AS $$
+DECLARE
+    user_role VARCHAR;
+BEGIN
+    SELECT r.role_name INTO user_role
+    FROM user_roles ur
+    JOIN roles r ON ur.role_id = r.id
+    WHERE ur.user_id = user_uuid
+    LIMIT 1;
+    RETURN user_role;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Policies for profiles table
+CREATE POLICY profiles_select ON profiles
+    FOR SELECT
+    USING (auth.uid() = user_id OR get_user_role(auth.uid()) = 'Admin');
+CREATE POLICY profiles_insert ON profiles
+    FOR INSERT
+    WITH CHECK (auth.uid() = user_id OR get_user_role(auth.uid()) = 'Admin');
+CREATE POLICY profiles_update ON profiles
+    FOR UPDATE
+    USING (auth.uid() = user_id OR get_user_role(auth.uid()) = 'Admin');
+CREATE POLICY profiles_delete ON profiles
+    FOR DELETE
+    USING (get_user_role(auth.uid()) = 'Admin');
+
+-- Policies for roles table
+CREATE POLICY roles_select ON roles
+    FOR SELECT
+    USING (true); -- Everyone can view roles
+
+-- Policies for user_roles table
+CREATE POLICY user_roles_select ON user_roles
+    FOR SELECT
+    USING (auth.uid() = user_id OR get_user_role(auth.uid()) = 'Admin');
+CREATE POLICY user_roles_insert ON user_roles
+    FOR INSERT
+    WITH CHECK (get_user_role(auth.uid()) = 'Admin');
+CREATE POLICY user_roles_update ON user_roles
+    FOR UPDATE
+    USING (get_user_role(auth.uid()) = 'Admin');
+CREATE POLICY user_roles_delete ON user_roles
+    FOR DELETE
+    USING (get_user_role(auth.uid()) = 'Admin');
+
+-- Policies for events table
+CREATE POLICY events_select ON events
+    FOR SELECT
+    USING (
+        auth.uid() = owner_id
+        OR get_user_role(auth.uid()) IN ('Admin', 'Organizer', 'Viewer')
+        OR EXISTS (
+            SELECT 1 FROM event_collaborators ec
+            WHERE ec.event_id = events.id AND ec.user_id = auth.uid()
+        )
+    );
+CREATE POLICY events_insert ON events
+    FOR INSERT
+    WITH CHECK (get_user_role(auth.uid()) IN ('Admin', 'Organizer'));
+CREATE POLICY events_update ON events
+    FOR UPDATE
+    USING (auth.uid() = owner_id OR get_user_role(auth.uid()) = 'Admin');
+CREATE POLICY events_delete ON events
+    FOR DELETE
+    USING (auth.uid() = owner_id OR get_user_role(auth.uid()) = 'Admin');
+
+-- Policies for event_images table
+CREATE POLICY event_images_select ON event_images
+    FOR SELECT
+    USING (
+        EXISTS (
+            SELECT 1 FROM events e
+            WHERE e.id = event_images.event_id
+            AND (
+                e.owner_id = auth.uid()
+                OR get_user_role(auth.uid()) IN ('Admin', 'Organizer', 'Viewer')
+                OR EXISTS (
+                    SELECT 1 FROM event_collaborators ec
+                    WHERE ec.event_id = e.id AND ec.user_id = auth.uid()
+                )
+            )
+        )
+    );
+CREATE POLICY event_images_insert ON event_images
+    FOR INSERT
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM events e
+            WHERE e.id = event_images.event_id
+            AND (e.owner_id = auth.uid() OR get_user_role(auth.uid()) = 'Admin')
+        )
+    );
+CREATE POLICY event_images_update ON event_images
+    FOR UPDATE
+    USING (
+        EXISTS (
+            SELECT 1 FROM events e
+            WHERE e.id = event_images.event_id
+            AND (e.owner_id = auth.uid() OR get_user_role(auth.uid()) = 'Admin')
+        )
+    );
+CREATE POLICY event_images_delete ON event_images
+    FOR DELETE
+    USING (
+        EXISTS (
+            SELECT 1 FROM events e
+            WHERE e.id = event_images.event_id
+            AND (e.owner_id = auth.uid() OR get_user_role(auth.uid()) = 'Admin')
+        )
+    );
+
+-- Policies for projects table
+CREATE POLICY projects_select ON projects
+    FOR SELECT
+    USING (
+        auth.uid() = owner_id
+        OR get_user_role(auth.uid()) IN ('Admin', 'Organizer', 'Viewer')
+        OR EXISTS (
+            SELECT 1 FROM project_collaborators pc
+            WHERE pc.project_id = projects.id AND pc.user_id = auth.uid()
+        )
+    );
+CREATE POLICY projects_insert ON projects
+    FOR INSERT
+    WITH CHECK (get_user_role(auth.uid()) IN ('Admin', 'Organizer'));
+CREATE POLICY projects_update ON projects
+    FOR UPDATE
+    USING (auth.uid() = owner_id OR get_user_role(auth.uid()) = 'Admin');
+CREATE POLICY projects_delete ON projects
+    FOR DELETE
+    USING (auth.uid() = owner_id OR get_user_role(auth.uid()) = 'Admin');
+
+-- Policies for project_images table
+CREATE POLICY project_images_select ON project_images
+    FOR SELECT
+    USING (
+        EXISTS (
+            SELECT 1 FROM projects p
+            WHERE p.id = project_images.project_id
+            AND (
+                p.owner_id = auth.uid()
+                OR get_user_role(auth.uid()) IN ('Admin', 'Organizer', 'Viewer')
+                OR EXISTS (
+                    SELECT 1 FROM project_collaborators pc
+                    WHERE pc.project_id = p.id AND pc.user_id = auth.uid()
+                )
+            )
+        )
+    );
+CREATE POLICY project_images_insert ON project_images
+    FOR INSERT
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM projects p
+            WHERE p.id = project_images.project_id
+            AND (p.owner_id = auth.uid() OR get_user_role(auth.uid()) = 'Admin')
+        )
+    );
+CREATE POLICY project_images_update ON project_images
+    FOR UPDATE
+    USING (
+        EXISTS (
+            SELECT 1 FROM projects p
+            WHERE p.id = project_images.project_id
+            AND (p.owner_id = auth.uid() OR get_user_role(auth.uid()) = 'Admin')
+        )
+    );
+CREATE POLICY project_images_delete ON project_images
+    FOR DELETE
+    USING (
+        EXISTS (
+            SELECT 1 FROM projects p
+            WHERE p.id = project_images.project_id
+            AND (p.owner_id = auth.uid() OR get_user_role(auth.uid()) = 'Admin')
+        )
+    );
+
+-- Policies for event_collaborators table
+CREATE POLICY event_collaborators_select ON event_collaborators
+    FOR SELECT
+    USING (
+        get_user_role(auth.uid()) = 'Admin'
+        OR EXISTS (
+            SELECT 1 FROM events e
+            WHERE e.id = event_collaborators.event_id AND e.owner_id = auth.uid()
+        )
+    );
+CREATE POLICY event_collaborators_insert ON event_collaborators
+    FOR INSERT
+    WITH CHECK (get_user_role(auth.uid()) = 'Admin');
+CREATE POLICY event_collaborators_delete ON event_collaborators
+    FOR DELETE
+    USING (get_user_role(auth.uid()) = 'Admin');
+
+-- Policies for project_collaborators table
+CREATE POLICY project_collaborators_select ON project_collaborators
+    FOR SELECT
+    USING (
+        get_user_role(auth.uid()) = 'Admin'
+        OR EXISTS (
+            SELECT 1 FROM projects p
+            WHERE p.id = project_collaborators.project_id AND p.owner_id = auth.uid()
+        )
+    );
+CREATE POLICY project_collaborators_insert ON project_collaborators
+    FOR INSERT
+    WITH CHECK (get_user_role(auth.uid()) = 'Admin');
+CREATE POLICY project_collaborators_delete ON project_collaborators
+    FOR DELETE
+    USING (get_user_role(auth.uid()) = 'Admin');
+
+-- Policies for dashboard_metrics table
+CREATE POLICY dashboard_metrics_select ON dashboard_metrics
+    FOR SELECT
+    USING (get_user_role(auth.uid()) IN ('Admin', 'Viewer'));
+CREATE POLICY dashboard_metrics_insert ON dashboard_metrics
+    FOR INSERT
+    WITH CHECK (get_user_role(auth.uid()) = 'Admin');
+CREATE POLICY dashboard_metrics_update ON dashboard_metrics
+    FOR UPDATE
+    USING (get_user_role(auth.uid()) = 'Admin');
+CREATE POLICY dashboard_metrics_delete ON dashboard_metrics
+    FOR DELETE
+    USING (get_user_role(auth.uid()) = 'Admin');
+
+-- Enable real-time subscriptions
+ALTER SUBSCRIPTION supabase_realtime ADD TABLE events;
+ALTER SUBSCRIPTION supabase_realtime ADD TABLE projects;
+ALTER SUBSCRIPTION supabase_realtime ADD TABLE event_images;
+ALTER SUBSCRIPTION supabase_realtime ADD TABLE project_images;
+
+-- Trigger to update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_profiles_timestamp
+    BEFORE UPDATE ON profiles
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();
+
+CREATE TRIGGER update_events_timestamp
+    BEFORE UPDATE ON events
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();
+
+CREATE TRIGGER update_projects_timestamp
+    BEFORE UPDATE ON projects
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();
+
+CREATE TRIGGER update_dashboard_metrics_timestamp
+    BEFORE UPDATE ON dashboard_metrics
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();
