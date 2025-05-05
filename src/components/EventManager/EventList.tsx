@@ -9,11 +9,12 @@ import {
   removeEvent,
   setLoading,
   setError,
+  fetchEvents,
 } from '../../store/slices/eventSlice';
 
 export const EventList: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { events, isLoading, error } = useAppSelector((state) => state.events);
+  const { events, loading, error } = useAppSelector((state) => state.events);
   const [isCreating, setIsCreating] = useState(false);
   const [newEvent, setNewEvent] = useState<Partial<Event>>({
     title: '',
@@ -23,27 +24,7 @@ export const EventList: React.FC = () => {
   });
 
   useEffect(() => {
-    const fetchEvents = async () => {
-      try {
-        dispatch(setLoading(true));
-        
-        const { data: events, error } = await supabase
-          .from('events')
-          .select('*')
-          .order('start_time', { ascending: true });
-
-        if (error) throw error;
-
-        dispatch(setEvents(events as Event[]));
-        dispatch(setError(null));
-      } catch (error) {
-        dispatch(setError(error instanceof Error ? error.message : 'An error occurred'));
-      } finally {
-        dispatch(setLoading(false));
-      }
-    };
-
-    fetchEvents();
+    dispatch(fetchEvents());
 
     // Set up real-time subscription
     const subscription = supabase
@@ -75,6 +56,7 @@ export const EventList: React.FC = () => {
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      dispatch(setLoading(true));
       const { data, error } = await supabase
         .from('events')
         .insert([newEvent])
@@ -92,10 +74,12 @@ export const EventList: React.FC = () => {
       });
     } catch (error) {
       dispatch(setError(error instanceof Error ? error.message : 'An error occurred'));
+    } finally {
+      dispatch(setLoading(false));
     }
   };
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
