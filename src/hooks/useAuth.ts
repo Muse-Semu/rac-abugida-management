@@ -234,12 +234,26 @@ export const useAuth = () => {
       dispatch(setAuthState({ isLoading: true }));
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+
+      // Clear the auth state
+      dispatch(setAuthState({
+        user: null,
+        role: null,
+        isLoading: false,
+        error: null,
+      }));
+
+      // Clear any stored tokens or session data
+      await supabase.auth.clearSession();
+      
+      return true; // Return true to indicate successful sign-out
     } catch (error) {
       console.error('Sign out error:', error);
       dispatch(setAuthState({
         error: error instanceof Error ? error.message : 'An error occurred',
         isLoading: false,
       }));
+      return false;
     }
   };
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import { supabase } from '../../supabaseClient';
+import { useAppDispatch } from '../../store/hooks';
+import { useAuth } from '../../hooks/useAuth';
 import {
   HomeIcon,
   CalendarIcon,
@@ -20,12 +20,14 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ onSectionChange, activeSection }) => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  const { user, role } = useAppSelector((state) => state.auth);
+  const { user, role, signOut } = useAuth();
 
   const handleSignOut = async () => {
     try {
-      await supabase.auth.signOut();
-      navigate('/login');
+      const success = await signOut();
+      if (success) {
+        navigate('/login');
+      }
     } catch (error) {
       console.error('Error signing out:', error);
     }
