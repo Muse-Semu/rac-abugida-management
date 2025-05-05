@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AppProvider } from './context/AppContext';
+import { Provider } from 'react-redux';
+import { store } from './store';
 import { Login } from './components/Auth/Login';
 import { Dashboard } from './components/Dashboard/Dashboard';
 import { EventList } from './components/EventManager/EventList';
@@ -35,7 +36,7 @@ const PrivateRoute: React.FC<{ children: React.ReactNode; allowedRoles?: string[
 
 const App: React.FC = () => {
   return (
-    <AppProvider>
+    <Provider store={store}>
       <Router>
         <div className="min-h-screen bg-gray-100">
           <Routes>
@@ -76,7 +77,7 @@ const App: React.FC = () => {
           </Routes>
         </div>
       </Router>
-    </AppProvider>
+    </Provider>
   );
 };
 
