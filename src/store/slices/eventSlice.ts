@@ -1,17 +1,31 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { Event } from '../types';
+import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { supabase } from '../../supabaseClient';
+import { Event } from '../../types';
 
 interface EventState {
   events: Event[];
-  isLoading: boolean;
+  loading: boolean;
   error: string | null;
 }
 
 const initialState: EventState = {
   events: [],
-  isLoading: false,
+  loading: false,
   error: null,
 };
+
+export const fetchEvents = createAsyncThunk(
+  'events/fetchEvents',
+  async () => {
+    const { data, error } = await supabase
+      .from('events')
+      .select('*')
+      .order('start_time', { ascending: false });
+
+    if (error) throw error;
+    return data as Event[];
+  }
+);
 
 const eventSlice = createSlice({
   name: 'events',
@@ -21,7 +35,7 @@ const eventSlice = createSlice({
       state.events = action.payload;
     },
     addEvent: (state, action: PayloadAction<Event>) => {
-      state.events.push(action.payload);
+      state.events.unshift(action.payload);
     },
     updateEvent: (state, action: PayloadAction<Event>) => {
       const index = state.events.findIndex(event => event.id === action.payload.id);
@@ -33,11 +47,26 @@ const eventSlice = createSlice({
       state.events = state.events.filter(event => event.id !== action.payload);
     },
     setLoading: (state, action: PayloadAction<boolean>) => {
-      state.isLoading = action.payload;
+      state.loading = action.payload;
     },
     setError: (state, action: PayloadAction<string | null>) => {
       state.error = action.payload;
     },
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchEvents.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchEvents.fulfilled, (state, action) => {
+        state.loading = false;
+        state.events = action.payload;
+      })
+      .addCase(fetchEvents.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Failed to fetch events';
+      });
   },
 });
 
