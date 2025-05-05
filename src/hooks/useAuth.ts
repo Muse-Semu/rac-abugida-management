@@ -15,6 +15,10 @@ export const useAuth = () => {
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) throw error;
+
+        console.log('session', session);
+        console.log('error', error);
+
         
         if (session) {
           // Fetch user role and profile
@@ -23,6 +27,9 @@ export const useAuth = () => {
             .select('*, roles(*)')
             .eq('user_id', session.user.id)
             .single();
+
+        console.log('userRole', userRole);
+        console.log('roleError', roleError);
 
           if (roleError) throw roleError;
 
