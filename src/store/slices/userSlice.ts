@@ -26,10 +26,7 @@ export const fetchUsers = createAsyncThunk(
   'users/fetchUsers',
   async (_, { rejectWithValue }) => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const { data, error } = await supabase.auth.admin.listUsers()
 
       if (error) throw error;
       return data;
