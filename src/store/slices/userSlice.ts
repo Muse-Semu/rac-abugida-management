@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { supabase } from '../../supabaseClient';
+import { createClient } from "@supabase/supabase-js";
+import { supabase, supabaseServiceRoleKey } from '../../supabaseClient';
 
 interface User {
   id: string;
@@ -22,14 +23,18 @@ const initialState: UserState = {
   error: null,
 };
 
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+
 export const fetchUsers = createAsyncThunk(
   'users/fetchUsers',
   async (_, { rejectWithValue }) => {
     try {
-      const { data, error } = await supabase.auth.admin.listUsers()
+      const adminClient = createClient(supabaseUrl, supabaseServiceRoleKey);
+
+      const { data, error } = await adminClient.auth.admin.listUsers();
 
       if (error) throw error;
-      return data;
+      return data.users;
     } catch (error) {
       return rejectWithValue((error as Error).message);
     }
