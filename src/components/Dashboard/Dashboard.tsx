@@ -11,11 +11,45 @@ import { UserList } from '../UserManager/UserList';
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Calendar, Users, FolderOpen, Activity } from "lucide-react";
+import { formatDistanceToNow, format, isAfter } from 'date-fns';
 
 export const Dashboard: React.FC = () => {
   const dispatch = useAppDispatch();
   const { user, role } = useAppSelector((state) => state.auth);
   const [activeSection, setActiveSection] = useState<'dashboard' | 'events' | 'projects' | 'users'>('dashboard');
+
+  // Get data from Redux store
+  const events = useAppSelector((state) => state.events.events);
+  const projects = useAppSelector((state) => state.projects.projects);
+  const users = useAppSelector((state) => state.users.users);
+
+  // Combine and sort recent activities
+  const recentActivities = [
+    ...events.map(e => ({
+      type: 'event',
+      title: `New event: ${e.title}`,
+      created_at: e.created_at,
+    })),
+    ...projects.map(p => ({
+      type: 'project',
+      title: `New project: ${p.name}`,
+      created_at: p.created_at,
+    })),
+    ...users.map(u => ({
+      type: 'user',
+      title: `New user: ${u.full_name || u.email}`,
+      created_at: u.created_at,
+    })),
+  ]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 5); // Show only the 5 most recent
+
+  // Get upcoming events
+  const now = new Date();
+  const upcomingEvents = events
+    .filter(e => isAfter(new Date(e.start_time), now))
+    .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+    .slice(0, 3); // Show only the next 3
 
   useEffect(() => {
     // Fetch data based on role
@@ -72,8 +106,7 @@ export const Dashboard: React.FC = () => {
                   <Calendar className="h-4 w-4 text-[hsl(var(--muted-foreground))]" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">12</div>
-                  <p className="text-xs text-[hsl(var(--muted-foreground))]">+2 from last month</p>
+                  <div className="text-2xl font-bold">{events.length}</div>
                 </CardContent>
               </Card>
               <Card>
@@ -82,8 +115,7 @@ export const Dashboard: React.FC = () => {
                   <FolderOpen className="h-4 w-4 text-[hsl(var(--muted-foreground))]" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">5</div>
-                  <p className="text-xs text-[hsl(var(--muted-foreground))]">+1 from last month</p>
+                  <div className="text-2xl font-bold">{projects.length}</div>
                 </CardContent>
               </Card>
               <Card>
@@ -92,8 +124,7 @@ export const Dashboard: React.FC = () => {
                   <Users className="h-4 w-4 text-[hsl(var(--muted-foreground))]" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">8</div>
-                  <p className="text-xs text-[hsl(var(--muted-foreground))]">+2 from last month</p>
+                  <div className="text-2xl font-bold">{users.length}</div>
                 </CardContent>
               </Card>
             </div>
@@ -105,27 +136,25 @@ export const Dashboard: React.FC = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    <div className="flex items-center">
-                      <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
-                      <div>
-                        <p className="text-sm font-medium">New event created</p>
-                        <p className="text-xs text-[hsl(var(--muted-foreground))]">2 hours ago</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center">
-                      <div className="w-2 h-2 bg-blue-500 rounded-full mr-3"></div>
-                      <div>
-                        <p className="text-sm font-medium">Project updated</p>
-                        <p className="text-xs text-[hsl(var(--muted-foreground))]">4 hours ago</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center">
-                      <div className="w-2 h-2 bg-yellow-500 rounded-full mr-3"></div>
-                      <div>
-                        <p className="text-sm font-medium">New team member joined</p>
-                        <p className="text-xs text-[hsl(var(--muted-foreground))]">1 day ago</p>
-                      </div>
-                    </div>
+                    {recentActivities.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">No recent activity.</div>
+                    ) : (
+                      recentActivities.map((activity, idx) => (
+                        <div className="flex items-center" key={idx}>
+                          <div className={`w-2 h-2 rounded-full mr-3 ${
+                            activity.type === 'event' ? 'bg-green-500'
+                            : activity.type === 'project' ? 'bg-blue-500'
+                            : 'bg-yellow-500'
+                          }`}></div>
+                          <div>
+                            <p className="text-sm font-medium">{activity.title}</p>
+                            <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                              {formatDistanceToNow(new Date(activity.created_at), { addSuffix: true })}
+                            </p>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -136,18 +165,18 @@ export const Dashboard: React.FC = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    <div>
-                      <p className="text-sm font-medium">Team Meeting</p>
-                      <p className="text-xs text-[hsl(var(--muted-foreground))]">Tomorrow, 10:00 AM</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Project Review</p>
-                      <p className="text-xs text-[hsl(var(--muted-foreground))]">Friday, 2:00 PM</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Client Presentation</p>
-                      <p className="text-xs text-[hsl(var(--muted-foreground))]">Next Monday, 11:00 AM</p>
-                    </div>
+                    {upcomingEvents.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">No upcoming events.</div>
+                    ) : (
+                      upcomingEvents.map((event, idx) => (
+                        <div key={idx}>
+                          <p className="text-sm font-medium">{event.title}</p>
+                          <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                            {format(new Date(event.start_time), "EEEE, MMM d, h:mm a")}
+                          </p>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </CardContent>
               </Card>
