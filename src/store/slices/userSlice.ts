@@ -1,6 +1,6 @@
+// src/store/slices/userSlice.ts
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { createClient } from "@supabase/supabase-js";
-import { supabase, supabaseServiceRoleKey } from '../../supabaseClient';
+import { supabase } from '../../supabaseClient';
 
 interface User {
   id: string;
@@ -23,18 +23,18 @@ const initialState: UserState = {
   error: null,
 };
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-
 export const fetchUsers = createAsyncThunk(
   'users/fetchUsers',
   async (_, { rejectWithValue }) => {
     try {
-      const adminClient = createClient(supabaseUrl, supabaseServiceRoleKey);
-
-      const { data, error } = await adminClient.auth.admin.listUsers();
+      // Fetch profiles instead of admin users
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
-      return data.users;
+      return data;
     } catch (error) {
       return rejectWithValue((error as Error).message);
     }
@@ -93,4 +93,4 @@ export const {
   setError,
 } = userSlice.actions;
 
-export default userSlice.reducer; 
+export default userSlice.reducer;
