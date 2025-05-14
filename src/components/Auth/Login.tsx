@@ -6,6 +6,7 @@ export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [fullName, setFullName] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
   const { signIn, register, isLoading, error, isInitialized, user } = useAuth();
   const navigate = useNavigate();
@@ -24,7 +25,10 @@ export const Login: React.FC = () => {
         if (password !== confirmPassword) {
           throw new Error('Passwords do not match');
         }
-        await register(email, password);
+        if (!fullName.trim()) {
+          throw new Error('Full name is required');
+        }
+        await register(email, password, fullName);
       } else {
         const success = await signIn(email, password);
         if (success) {
@@ -51,6 +55,23 @@ export const Login: React.FC = () => {
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="rounded-md shadow-sm space-y-4">
+            {isRegistering && (
+              <div>
+                <label htmlFor="full-name" className="block text-sm font-medium text-gray-700">
+                  Full Name
+                </label>
+                <input
+                  id="full-name"
+                  name="full-name"
+                  type="text"
+                  required
+                  className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                  placeholder="Enter your full name"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                />
+              </div>
+            )}
             <div>
               <label htmlFor="email-address" className="block text-sm font-medium text-gray-700">
                 Email address
@@ -143,6 +164,7 @@ export const Login: React.FC = () => {
                 setIsRegistering(!isRegistering);
                 setPassword('');
                 setConfirmPassword('');
+                setFullName('');
               }}
               className="text-sm text-indigo-600 hover:text-indigo-500 transition-colors duration-200"
             >
