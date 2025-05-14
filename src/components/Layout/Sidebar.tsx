@@ -47,7 +47,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onSectionChange, activeSection
       <div className="flex flex-col w-64">
         {/* Logo */}
         <div className="flex items-center justify-center h-16 px-4 bg-gray-800">
-          <h1 className="text-xl font-bold">Abugida</h1>
+          <h1 className="text-xl font-bold"></h1>
         </div>
 
         {/* Navigation */}
