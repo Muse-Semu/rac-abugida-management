@@ -143,7 +143,7 @@ export const useAuth = () => {
     }
   };
 
-  const register = async (email: string, password: string) => {
+  const register = async (email: string, password: string, fullName: string) => {
     try {
       dispatch(setAuthState({ isLoading: true, error: null }));
       
@@ -156,6 +156,7 @@ export const useAuth = () => {
         .single();
 
       if (roleCheckError) {
+        console.error('Error checking Member role:', roleCheckError);
         // If Member role doesn't exist, create it
         const { data: newRole, error: createRoleError } = await supabase
           .from('roles')
@@ -168,59 +169,115 @@ export const useAuth = () => {
           .select()
           .single();
 
-        if (createRoleError) throw createRoleError;
-        if (!newRole) throw new Error('Failed to create Member role');
+        if (createRoleError) {
+          console.error('Error creating Member role:', createRoleError);
+          throw new Error('Failed to create Member role: ' + createRoleError.message);
+        }
+        if (!newRole) throw new Error('Failed to create Member role: No data returned');
         memberRoleId = newRole.id;
       } else {
         if (!existingRole) throw new Error('Member role not found');
         memberRoleId = existingRole.id;
       }
 
-      // Register the user
+      console.log('Member role ID:', memberRoleId);
+
+      // Register the user with email confirmation disabled
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: {
+            full_name: fullName,
+          },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
       });
       
       if (error) {
+        console.error('Error during sign up:', error);
         if (error.message.includes('already registered')) {
           throw new Error('An account with this email already exists. Please sign in instead.');
         }
-        throw error;
+        throw new Error('Failed to create user: ' + error.message);
       }
 
-      if (data.user) {
-        // Create a profile for the new user
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert([
-            {
-              user_id: data.user.id,
-              email: data.user.email,
-              designation: 'Member',
-            },
-          ]);
-
-        if (profileError) throw profileError;
-
-        // Assign Member role to the user
-        const { error: roleError } = await supabase
-          .from('user_roles')
-          .insert([
-            {
-              user_id: data.user.id,
-              role_id: memberRoleId,
-            },
-          ]);
-
-        if (roleError) throw roleError;
-
-        // Sign in the user after successful registration
-        await signIn(email, password);
+      if (!data.user) {
+        throw new Error('No user data returned after registration');
       }
+
+      console.log('User created with ID:', data.user.id);
+
+      // Wait a short moment to ensure the user is fully created
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Create a profile for the new user
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert([
+          {
+            user_id: data.user.id,
+            full_name: fullName,
+            designation: 'Member',
+          },
+        ])
+        .select()
+        .single();
+
+      if (profileError) {
+        console.error('Error creating profile:', profileError);
+        // If profile creation fails, we should clean up the user
+        try {
+          await supabase.auth.admin.deleteUser(data.user.id);
+        } catch (deleteError) {
+          console.error('Error deleting user after profile creation failure:', deleteError);
+        }
+        throw new Error('Failed to create profile: ' + profileError.message);
+      }
+
+      console.log('Profile created successfully');
+
+      // Assign Member role to the user
+      const { error: roleError } = await supabase
+        .from('user_roles')
+        .insert([
+          {
+            user_id: data.user.id,
+            role_id: memberRoleId,
+          },
+        ])
+        .select()
+        .single();
+
+      if (roleError) {
+        console.error('Error assigning role:', roleError);
+        // If role assignment fails, we should clean up the user and profile
+        try {
+          await supabase.auth.admin.deleteUser(data.user.id);
+        } catch (deleteError) {
+          console.error('Error deleting user after role assignment failure:', deleteError);
+        }
+        throw new Error('Failed to assign role: ' + roleError.message);
+      }
+
+      console.log('Role assigned successfully');
+
+      // Sign in the user after successful registration
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (signInError) {
+        console.error('Error signing in after registration:', signInError);
+        throw new Error('Failed to sign in after registration: ' + signInError.message);
+      }
+
+      return true;
     } catch (error) {
+      console.error('Registration error:', error);
       dispatch(setAuthState({
-        error: error instanceof Error ? error.message : 'An error occurred',
+        error: error instanceof Error ? error.message : 'An error occurred during registration',
         isLoading: false,
       }));
       throw error;
@@ -242,9 +299,6 @@ export const useAuth = () => {
         isLoading: false,
         error: null,
       }));
-
-      // Clear any stored tokens or session data
-      await supabase.auth.clearSession();
       
       return true; // Return true to indicate successful sign-out
     } catch (error) {
