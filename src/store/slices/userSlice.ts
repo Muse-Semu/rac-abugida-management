@@ -40,30 +40,32 @@ export const fetchUsers = createAsyncThunk(
   'users/fetchUsers',
   async (_, { rejectWithValue }) => {
     try {
-      // First, get all profiles
+      // Get all profiles
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('*');
 
       if (profilesError) throw profilesError;
 
-      // Then, get all user roles
+      // Get all user roles
       const { data: userRoles, error: rolesError } = await supabase
         .from('user_roles')
-        .select(`
-          user_id,
-          roles (
-            id,
-            role_name
-          )
-        `);
+        .select('user_id, role_id');
 
       if (rolesError) throw rolesError;
+
+      // Get all roles
+      const { data: roles, error: roleDetailsError } = await supabase
+        .from('roles')
+        .select('id, role_name');
+
+      if (roleDetailsError) throw roleDetailsError;
 
       // Combine the data
       const formattedUsers: User[] = profiles.map((profile: any) => {
         const userRole = userRoles.find((ur: any) => ur.user_id === profile.user_id);
-        const role = userRole?.roles?.[0] || null;
+        const role = userRole ? roles.find((r: any) => r.id === userRole.role_id) : null;
+        
         return {
           id: profile.user_id,
           email: profile.email,
@@ -131,17 +133,61 @@ export const createUser = createAsyncThunk(
 
         if (profileError) throw profileError;
 
-        // Assign role if provided
+        // Only assign role if role_id is provided (admin creating user)
         if (userData.role_id) {
-          const { error: roleError } = await supabase
+          // First check if the current user is an admin
+          const { data: currentUserRoles, error: roleCheckError } = await supabase
             .from('user_roles')
-            .insert({
-              user_id: authData.user.id,
-              role_id: parseInt(userData.role_id),
-            });
+            .select(`
+              roles (
+                role_name
+              )
+            `)
+            .eq('user_id', (await supabase.auth.getUser()).data.user?.id);
 
-          if (roleError) throw roleError;
+          if (roleCheckError) throw roleCheckError;
+
+          // Check if any of the user's roles is Admin
+          const isAdmin = currentUserRoles?.some(
+            (userRole: any) => userRole.roles?.role_name === 'Admin'
+          );
+
+          // Only proceed with role assignment if the current user is an admin
+          if (isAdmin) {
+            // First delete any existing roles for this user
+            const { error: deleteError } = await supabase
+              .from('user_roles')
+              .delete()
+              .eq('user_id', authData.user.id);
+
+            if (deleteError) throw deleteError;
+
+            // Then insert the new role
+            const { error: roleError } = await supabase
+              .from('user_roles')
+              .insert({
+                user_id: authData.user.id,
+                role_id: parseInt(userData.role_id),
+              });
+
+            if (roleError) throw roleError;
+          }
         }
+
+        // Fetch the created user's role to return complete data
+        const { data: userRoles, error: fetchRoleError } = await supabase
+          .from('user_roles')
+          .select(`
+            roles (
+              id,
+              role_name
+            )
+          `)
+          .eq('user_id', authData.user.id);
+
+        if (fetchRoleError) throw fetchRoleError;
+
+        const userRole = userRoles?.[0]?.roles;
 
         return {
           id: authData.user.id,
@@ -150,9 +196,9 @@ export const createUser = createAsyncThunk(
           designation: userData.designation,
           is_active: userData.is_active,
           created_at: authData.user.created_at,
-          role: userData.role_id ? {
-            id: parseInt(userData.role_id),
-            role_name: '', // This will be populated when fetching users
+          role: userRole ? {
+            id: userRole.id,
+            role_name: userRole.role_name,
           } : null,
         };
       }
@@ -181,25 +227,77 @@ export const updateUser = createAsyncThunk(
 
       // Update role if provided
       if (userData.role_id) {
-        const { error: roleError } = await supabase
+        // First check if user already has a role
+        const { data: existingRole, error: checkError } = await supabase
           .from('user_roles')
-          .upsert({
-            user_id: userId,
-            role_id: parseInt(userData.role_id),
-          });
+          .select('*')
+          .eq('user_id', userId)
+          .single();
 
-        if (roleError) throw roleError;
+        if (checkError && checkError.code !== 'PGRST116') throw checkError; // PGRST116 is "no rows returned"
+
+        if (existingRole) {
+          // Update existing role
+          const { error: updateError } = await supabase
+            .from('user_roles')
+            .update({ role_id: parseInt(userData.role_id) })
+            .eq('user_id', userId);
+
+          if (updateError) throw updateError;
+        } else {
+          // Insert new role
+          const { error: insertError } = await supabase
+            .from('user_roles')
+            .insert({
+              user_id: userId,
+              role_id: parseInt(userData.role_id),
+            });
+
+          if (insertError) throw insertError;
+        }
+      }
+
+      // Fetch updated user data
+      const { data: profile, error: profileFetchError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (profileFetchError) throw profileFetchError;
+
+      // Fetch user's role
+      const { data: userRole, error: roleFetchError } = await supabase
+        .from('user_roles')
+        .select('role_id')
+        .eq('user_id', userId)
+        .single();
+
+      if (roleFetchError && roleFetchError.code !== 'PGRST116') throw roleFetchError;
+
+      // Fetch role details if user has a role
+      let roleDetails = null;
+      if (userRole) {
+        const { data: role, error: roleDetailsError } = await supabase
+          .from('roles')
+          .select('id, role_name')
+          .eq('id', userRole.role_id)
+          .single();
+
+        if (roleDetailsError) throw roleDetailsError;
+        roleDetails = role;
       }
 
       return {
         id: userId,
+        email: profile.email,
         full_name: userData.full_name,
         designation: userData.designation,
         is_active: userData.is_active,
-        created_at: '', // This will be populated when fetching users
-        role: userData.role_id ? {
-          id: parseInt(userData.role_id),
-          role_name: '', // This will be populated when fetching users
+        created_at: profile.created_at,
+        role: roleDetails ? {
+          id: roleDetails.id,
+          role_name: roleDetails.role_name,
         } : null,
       };
     } catch (error) {

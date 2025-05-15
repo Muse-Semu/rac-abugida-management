@@ -1,35 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Box,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControl,
-  IconButton,
-  InputLabel,
-  MenuItem,
-  Paper,
-  Select,
-  TextField,
-  Typography,
-  Switch,
-  FormControlLabel,
-  Avatar,
-  Chip,
-  Tooltip,
-  InputAdornment,
-  Alert,
-  CircularProgress,
-} from '@mui/material';
-import {
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  Search as SearchIcon,
-  Add as AddIcon,
-  Person as PersonIcon,
-} from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import {
   fetchUsers,
@@ -39,6 +8,40 @@ import {
   deleteUser,
   toggleUserStatus,
 } from '../../store/slices/userSlice';
+import { formatDistanceToNow } from 'date-fns';
+import { Plus, Search, Edit, Trash2, UserPlus, UserMinus } from 'lucide-react';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface User {
   id: string;
@@ -50,6 +53,7 @@ interface User {
     id: number;
     role_name: string;
   } | null;
+  created_at: string;
 }
 
 interface Role {
@@ -106,18 +110,16 @@ export const UserList: React.FC = () => {
   };
 
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | { name?: string; value: unknown }> | 
-    React.ChangeEvent<{ name?: string; value: string }> |
-    { target: { name?: string; value: string } }
+    e: React.ChangeEvent<HTMLInputElement> | { target: { name: string; value: string } }
   ) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name as string]: value,
+      [name]: value,
     }));
   };
 
-  const handleToggleActive = async (userId: string, currentStatus: boolean) => {
+  const handleToggleActive = (userId: string, currentStatus: boolean) => {
     dispatch(toggleUserStatus({ userId, currentStatus }));
   };
 
@@ -125,7 +127,6 @@ export const UserList: React.FC = () => {
     e.preventDefault();
     try {
       if (selectedUser) {
-        // Update existing user
         dispatch(updateUser({
           userId: selectedUser.id,
           userData: {
@@ -136,7 +137,6 @@ export const UserList: React.FC = () => {
           },
         }));
       } else {
-        // Create new user
         dispatch(createUser({
           email: formData.email,
           full_name: formData.full_name,
@@ -151,193 +151,246 @@ export const UserList: React.FC = () => {
     }
   };
 
-  const handleDelete = async (userId: string) => {
+  const handleDelete = (userId: string) => {
     if (window.confirm('Are you sure you want to delete this user?')) {
       dispatch(deleteUser(userId));
     }
   };
 
   const filteredUsers = users.filter(user => 
-    user.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.designation.toLowerCase().includes(searchQuery.toLowerCase())
+    (user.full_name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+    (user.email?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+    (user.designation?.toLowerCase() || '').includes(searchQuery.toLowerCase())
   );
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-        <CircularProgress />
-      </Box>
+      <div className="p-8 space-y-4">
+        <Skeleton className="h-8 w-[250px]" />
+        <Skeleton className="h-12 w-full" />
+        <div className="space-y-2">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-16 w-full" />
+          ))}
+        </div>
+      </div>
     );
   }
 
   if (error) {
     return (
-      <Box p={3}>
-        <Alert severity="error">{error}</Alert>
-      </Box>
+      <div className="p-8">
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </div>
     );
   }
 
   return (
-    <Box p={3}>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4" component="h1">
-          User Management
-        </Typography>
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<AddIcon />}
-          onClick={() => handleOpenDialog()}
-        >
-          Add User
-        </Button>
-      </Box>
-
-      <TextField
-        fullWidth
-        variant="outlined"
-        placeholder="Search users..."
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        sx={{ mb: 3 }}
-        InputProps={{
-          startAdornment: (
-            <InputAdornment position="start">
-              <SearchIcon />
-            </InputAdornment>
-          ),
-        }}
-      />
-
-      {filteredUsers.map((user) => (
-        <Paper
-          key={user.id}
-          sx={{
-            p: 2,
-            mb: 2,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <Box display="flex" alignItems="center" gap={2}>
-            <Avatar>
-              <PersonIcon />
-            </Avatar>
-            <Box>
-              <Typography variant="h6">{user.full_name}</Typography>
-              <Typography color="textSecondary">{user.email}</Typography>
-              <Typography variant="body2">{user.designation}</Typography>
-              {user.role && (
-                <Chip
-                  label={user.role.role_name}
-                  color={user.role.role_name === 'Admin' ? 'error' : 'primary'}
-                  size="small"
-                  sx={{ mt: 1 }}
-                />
+    <div className="p-8 space-y-6 ">
+      <div className="flex justify-between items-center border-b">
+        <div className="">
+          <h1 className="text-3xl font-bold tracking-tight">User Management</h1>
+          <p className="text-muted-foreground">
+            Manage your team members and their roles
+          </p>
+        </div>
+        <Dialog open={openDialog} onOpenChange={setOpenDialog}>
+          <DialogTrigger asChild>
+            <Button onClick={() => handleOpenDialog()}>
+              <Plus className="mr-2 h-4 w-4" /> Add User
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {selectedUser ? "Edit User" : "Add New User"}
+              </DialogTitle>
+              <DialogDescription>
+                {selectedUser
+                  ? "Update user information"
+                  : "Create a new user account"}
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {!selectedUser && (
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    required
+                  />
+                </div>
               )}
-            </Box>
-          </Box>
-          <Box display="flex" alignItems="center" gap={1}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={user.is_active}
-                  onChange={() => handleToggleActive(user.id, user.is_active)}
-                  color="primary"
+              <div className="space-y-2">
+                <Label htmlFor="full_name">Full Name</Label>
+                <Input
+                  id="full_name"
+                  name="full_name"
+                  value={formData.full_name}
+                  onChange={handleInputChange}
+                  required
                 />
-              }
-              label={user.is_active ? 'Active' : 'Inactive'}
-            />
-            <Tooltip title="Edit">
-              <IconButton onClick={() => handleOpenDialog(user)}>
-                <EditIcon />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="Delete">
-              <IconButton onClick={() => handleDelete(user.id)}>
-                <DeleteIcon />
-              </IconButton>
-            </Tooltip>
-          </Box>
-        </Paper>
-      ))}
-
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {selectedUser ? 'Edit User' : 'Add New User'}
-        </DialogTitle>
-        <DialogContent>
-          <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
-            {!selectedUser && (
-              <TextField
-                fullWidth
-                label="Email"
-                name="email"
-                type="email"
-                value={formData.email}
-                onChange={handleInputChange}
-                required
-                sx={{ mb: 2 }}
-              />
-            )}
-            <TextField
-              fullWidth
-              label="Full Name"
-              name="full_name"
-              value={formData.full_name}
-              onChange={handleInputChange}
-              required
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              fullWidth
-              label="Designation"
-              name="designation"
-              value={formData.designation}
-              onChange={handleInputChange}
-              required
-              sx={{ mb: 2 }}
-            />
-            <FormControl fullWidth sx={{ mb: 2 }}>
-              <InputLabel>Role</InputLabel>
-              <Select
-                name="role_id"
-                value={formData.role_id}
-                onChange={handleInputChange}
-                label="Role"
-              >
-                {roles.map((role) => (
-                  <MenuItem key={role.id} value={role.id}>
-                    {role.role_name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <FormControlLabel
-              control={
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="designation">Designation</Label>
+                <Input
+                  id="designation"
+                  name="designation"
+                  value={formData.designation}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="role">Role</Label>
+                <Select
+                  name="role_id"
+                  value={formData.role_id}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({ ...prev, role_id: value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {roles.map((role) => (
+                      <SelectItem key={role.id} value={role.id.toString()}>
+                        {role.role_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center space-x-2">
                 <Switch
-                  name="is_active"
+                  id="is_active"
                   checked={formData.is_active}
-                  onChange={(e) => setFormData(prev => ({
-                    ...prev,
-                    is_active: e.target.checked,
-                  }))}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({ ...prev, is_active: checked }))
+                  }
                 />
-              }
-              label="Active"
-            />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>Cancel</Button>
-          <Button onClick={handleSubmit} variant="contained" color="primary">
-            {selectedUser ? 'Update' : 'Create'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Box>
+                <Label htmlFor="is_active">Active</Label>
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCloseDialog}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit">
+                  {selectedUser ? "Update" : "Create"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="space-y-4">
+        <div className="flex items-center space-x-2">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search users..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="max-w-sm"
+          />
+        </div>
+
+        <Card className="">
+          <CardHeader>
+            <CardTitle>Users</CardTitle>
+          </CardHeader>
+          <CardContent className="">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Designation</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredUsers.map((user) => (
+                  <TableRow key={user.id}>
+                    <TableCell className="font-medium">
+                      {user.full_name}
+                    </TableCell>
+                    <TableCell>{user.email}</TableCell>
+                    <TableCell>{user.designation}</TableCell>
+                    <TableCell>
+                      {user.role && (
+                        <Badge variant="outline">{user.role.role_name}</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={user.is_active ? "default" : "destructive"}
+                      >
+                        {user.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {user.created_at
+                        ? formatDistanceToNow(new Date(user.created_at), {
+                            addSuffix: true,
+                          })
+                        : "N/A"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end space-x-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleOpenDialog(user)}
+                          className=''
+                        >
+                          <Edit  className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDelete(user.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() =>
+                            handleToggleActive(user.id, user.is_active)
+                          }
+                        >
+                          {user.is_active ? (
+                            <UserMinus className="h-4 w-4" />
+                          ) : (
+                            <UserPlus className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
-}; 
+};
+
+export default UserList; 
