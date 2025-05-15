@@ -43,11 +43,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ onSectionChange, activeSection
   ];
 
   return (
-    <div className="flex h-screen bg-gray-900 text-white">
+    <div className="flex h-screen shadow text-white  ">
       <div className="flex flex-col w-64">
         {/* Logo */}
         <div className="flex items-center justify-center h-16 px-4 bg-gray-800">
-          <h1 className="text-xl font-bold"></h1>
+          <h1 className="text-xl font-bold">Abugida</h1>
         </div>
 
         {/* Navigation */}
@@ -64,7 +64,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onSectionChange, activeSection
                 className={`w-full flex items-center px-4 py-2 text-sm font-medium rounded-md ${
                   activeSection === item.section
                     ? 'bg-gray-800 text-white'
-                    : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                    : 'text-black hover:bg-gray-700 hover:text-white'
                 }`}
               >
                 <item.icon className="w-6 h-6 mr-3" />
@@ -83,13 +83,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ onSectionChange, activeSection
               </div>
             </div>
             <div className="ml-3">
-              <p className="text-sm font-medium text-white">{user?.email}</p>
-              <p className="text-xs text-gray-300">{role?.role_name}</p>
+              <p className="text-sm font-medium text-black">{user?.email}</p>
+              <p className="text-xs text-gray-400">{role?.role_name}</p>
             </div>
           </div>
           <button
             onClick={handleSignOut}
-            className="mt-4 w-full flex items-center px-4 py-2 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded-md"
+            className="mt-4 w-full flex items-center px-4 py-2 text-sm text-gray-300 hover:text-white bg-gray-500 hover:bg-gray-700 rounded-md"
           >
             <ArrowRightOnRectangleIcon className="w-5 h-5 mr-3" />
             Sign out
