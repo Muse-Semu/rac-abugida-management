@@ -12,6 +12,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/ca
 import { Button } from "../../components/ui/button";
 import { Calendar, Users, FolderOpen, Activity } from "lucide-react";
 import { formatDistanceToNow, format, isAfter } from 'date-fns';
+import { Routes, Route } from 'react-router-dom';
+import { Box, Container } from '@mui/material';
 
 export const Dashboard: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -41,13 +43,20 @@ export const Dashboard: React.FC = () => {
       created_at: u.created_at,
     })),
   ]
+    .filter(activity => {
+      const date = new Date(activity.created_at);
+      return !isNaN(date.getTime());
+    })
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, 5); // Show only the 5 most recent
 
   // Get upcoming events
   const now = new Date();
   const upcomingEvents = events
-    .filter(e => isAfter(new Date(e.start_time), now))
+    .filter(e => {
+      const startTime = new Date(e.start_time);
+      return !isNaN(startTime.getTime()) && isAfter(startTime, now);
+    })
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
     .slice(0, 3); // Show only the next 3
 
@@ -139,21 +148,26 @@ export const Dashboard: React.FC = () => {
                     {recentActivities.length === 0 ? (
                       <div className="text-sm text-muted-foreground">No recent activity.</div>
                     ) : (
-                      recentActivities.map((activity, idx) => (
-                        <div className="flex items-center" key={idx}>
-                          <div className={`w-2 h-2 rounded-full mr-3 ${
-                            activity.type === 'event' ? 'bg-green-500'
-                            : activity.type === 'project' ? 'bg-blue-500'
-                            : 'bg-yellow-500'
-                          }`}></div>
-                          <div>
-                            <p className="text-sm font-medium">{activity.title}</p>
-                            <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                              {formatDistanceToNow(new Date(activity.created_at), { addSuffix: true })}
-                            </p>
+                      recentActivities.map((activity, idx) => {
+                        const date = new Date(activity.created_at);
+                        return (
+                          <div className="flex items-center" key={idx}>
+                            <div className={`w-2 h-2 rounded-full mr-3 ${
+                              activity.type === 'event' ? 'bg-green-500'
+                              : activity.type === 'project' ? 'bg-blue-500'
+                              : 'bg-yellow-500'
+                            }`}></div>
+                            <div>
+                              <p className="text-sm font-medium">{activity.title}</p>
+                              <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                                {!isNaN(date.getTime()) 
+                                  ? formatDistanceToNow(date, { addSuffix: true })
+                                  : 'Invalid date'}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </CardContent>
@@ -168,14 +182,19 @@ export const Dashboard: React.FC = () => {
                     {upcomingEvents.length === 0 ? (
                       <div className="text-sm text-muted-foreground">No upcoming events.</div>
                     ) : (
-                      upcomingEvents.map((event, idx) => (
-                        <div key={idx}>
-                          <p className="text-sm font-medium">{event.title}</p>
-                          <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                            {format(new Date(event.start_time), "EEEE, MMM d, h:mm a")}
-                          </p>
-                        </div>
-                      ))
+                      upcomingEvents.map((event, idx) => {
+                        const startTime = new Date(event.start_time);
+                        return (
+                          <div key={idx}>
+                            <p className="text-sm font-medium">{event.title}</p>
+                            <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                              {!isNaN(startTime.getTime())
+                                ? format(startTime, "EEEE, MMM d, h:mm a")
+                                : 'Invalid date'}
+                            </p>
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 </CardContent>
@@ -187,12 +206,26 @@ export const Dashboard: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-[hsl(var(--background))]">
+    <Box sx={{ display: 'flex' }}>
       <Sidebar onSectionChange={setActiveSection} activeSection={activeSection} />
-      <div className="flex-1 overflow-auto">
-        {renderContent()}
-      </div>
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          height: '100vh',
+          overflow: 'auto',
+          backgroundColor: (theme) => theme.palette.background.default,
+        }}
+      >
+        <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+          <Routes>
+            <Route path="/users" element={<UserList />} />
+            {/* Add other routes here */}
+          </Routes>
+          {renderContent()}
+        </Container>
+      </Box>
       <DashboardTour />
-    </div>
+    </Box>
   );
 }; 
