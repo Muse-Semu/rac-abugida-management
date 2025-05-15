@@ -82,7 +82,7 @@ export const Dashboard: React.FC = () => {
                 <p className="text-[hsl(var(--muted-foreground))]">Here's what's happening with your events and projects.</p>
               </div>
              
-            
+        
 
             <div className=" grid gap-4 md:grid-cols-3 lg:grid-cols-3">
               <Card>
