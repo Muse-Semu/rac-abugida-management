@@ -157,11 +157,22 @@ export const UserList: React.FC = () => {
     }
   };
 
-  const filteredUsers = users.filter(user => 
-    user.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.designation.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredUsers = users.filter(user => {
+    if (!user) return false;
+    
+    const searchLower = searchQuery.toLowerCase();
+    const fullName = (user.full_name || '').toLowerCase();
+    const email = (user.email || '').toLowerCase();
+    const designation = (user.designation || '').toLowerCase();
+    const roleName = (user.role?.role_name || '').toLowerCase();
+
+    return (
+      fullName.includes(searchLower) ||
+      email.includes(searchLower) ||
+      designation.includes(searchLower) ||
+      roleName.includes(searchLower)
+    );
+  });
 
   if (loading) {
     return (
