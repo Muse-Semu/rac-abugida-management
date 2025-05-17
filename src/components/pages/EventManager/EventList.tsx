@@ -588,8 +588,8 @@ export const EventList: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {events.map((event) => {
-          const images = eventImages[event.id] || [];
-          const primaryImage = images.find(img => img.is_primary)?.url;
+          const eventImgs = eventImages[event.id] || [];
+          const primaryImage = eventImgs.find(img => img.is_primary)?.url;
           
           return (
             <div
@@ -692,29 +692,30 @@ export const EventList: React.FC = () => {
                   </div>
                 )}
 
-                {/* Event Images Grid */}
-                {images.length > 0 && (
-                  <div className="mt-4">
-                    <h4 className="text-sm font-medium text-gray-700 mb-2">Event Images</h4>
-                    <div className="grid grid-cols-4 gap-2">
-                      {images.map((img, index) => (
-                        <div key={index} className="relative aspect-square group">
-                          <img
-                            src={img.url}
-                            alt={`${event.title} image ${index + 1}`}
-                            className={`w-full h-full object-cover rounded-lg ${
-                              img.is_primary ? 'ring-2 ring-indigo-500' : ''
-                            }`}
-                          />
-                          {img.is_primary && (
-                            <div className="absolute bottom-1 left-1 bg-indigo-500 text-white text-xs px-1 rounded">
-                              Primary
-                            </div>
-                          )}
-                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity rounded-lg" />
-                        </div>
-                      ))}
-                    </div>
+                {/* Additional Images */}
+                {eventImgs.length > 1 && (
+                  <div className="grid grid-cols-4 gap-2">
+                    {eventImgs.slice(0, 4).map((img, index) => (
+                      <div key={index} className="relative aspect-square">
+                        <img
+                          src={img.url}
+                          alt={`${event.title} image ${index + 1}`}
+                          className={`w-full h-full object-cover rounded-lg ${
+                            img.is_primary ? 'ring-2 ring-indigo-500' : ''
+                          }`}
+                        />
+                        {img.is_primary && (
+                          <div className="absolute bottom-1 left-1 bg-indigo-500 text-white text-xs px-1 rounded">
+                            Primary
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {eventImgs.length > 4 && (
+                      <div className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center">
+                        <span className="text-gray-500 text-sm">+{eventImgs.length - 4}</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
