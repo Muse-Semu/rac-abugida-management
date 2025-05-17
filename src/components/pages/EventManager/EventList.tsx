@@ -34,6 +34,7 @@ export const EventList: React.FC = () => {
   const [selectedCollaborators, setSelectedCollaborators] = useState<string[]>([]);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [primaryImageIndex, setPrimaryImageIndex] = useState<number>(0);
+  const [eventImages, setEventImages] = useState<Record<number, { url: string; is_primary: boolean }[]>>({});
   const [formData, setFormData] = useState<Partial<Event>>({
     title: '',
     description: '',
@@ -75,6 +76,32 @@ export const EventList: React.FC = () => {
       subscription.unsubscribe();
     };
   }, [dispatch]);
+
+  useEffect(() => {
+    // Fetch images for all events
+    const fetchEventImages = async () => {
+      const { data: images } = await supabase
+        .from('event_images')
+        .select('*');
+
+      if (images) {
+        const imagesByEvent = images.reduce((acc, img) => {
+          if (!acc[img.event_id]) {
+            acc[img.event_id] = [];
+          }
+          acc[img.event_id].push({
+            url: img.image_url,
+            is_primary: img.is_primary
+          });
+          return acc;
+        }, {} as Record<number, { url: string; is_primary: boolean }[]>);
+
+        setEventImages(imagesByEvent);
+      }
+    };
+
+    fetchEventImages();
+  }, [events]);
 
   const fetchUsers = async () => {
     const { data } = await supabase.from('users').select('*');
@@ -129,20 +156,39 @@ export const EventList: React.FC = () => {
 
       const eventData = {
         ...formattedData,
-        primary_image: imageUrls[primaryImageIndex],
-        images: imageUrls,
         owner_id: (await supabase.auth.getUser()).data.user?.id,
       };
 
+      let eventId: number;
+
       if (isEditing) {
         await dispatch(updateEvent({ eventId: isEditing, eventData }));
+        eventId = isEditing;
       } else {
-        await dispatch(createEvent(eventData as Omit<Event, 'id' | 'created_at' | 'updated_at' | 'attendees_count'>));
+        const result = await dispatch(createEvent(eventData as Omit<Event, 'id' | 'created_at' | 'updated_at' | 'attendees_count'>));
+        eventId = (result.payload as Event).id;
+      }
+
+      // Insert images into event_images table
+      if (imageUrls.length > 0) {
+        const imageRecords = imageUrls.map((url, index) => ({
+          event_id: eventId,
+          image_url: url,
+          is_primary: index === primaryImageIndex
+        }));
+
+        const { error: imageError } = await supabase
+          .from('event_images')
+          .insert(imageRecords);
+
+        if (imageError) {
+          throw imageError;
+        }
       }
 
       // Add collaborators
       for (const userId of selectedCollaborators) {
-        await dispatch(addCollaborator({ eventId: isEditing || 0, userId }));
+        await dispatch(addCollaborator({ eventId, userId }));
       }
 
       toast({
@@ -151,6 +197,7 @@ export const EventList: React.FC = () => {
         variant: "default",
       });
 
+      // Reset form and close dialog
       setIsCreating(false);
       setIsEditing(null);
       setSelectedImages([]);
@@ -167,6 +214,12 @@ export const EventList: React.FC = () => {
         max_attendees: null,
         is_recurring: false,
       });
+
+      // Close the dialog
+      const dialog = document.querySelector('[role="dialog"]');
+      if (dialog) {
+        (dialog as HTMLElement).style.display = 'none';
+      }
     } catch (error: any) {
       console.error('Error saving event:', error);
       toast({
@@ -177,11 +230,34 @@ export const EventList: React.FC = () => {
     }
   };
 
-  const handleEdit = (event: Event) => {
+  const handleEdit = async (event: Event) => {
     setIsEditing(event.id);
-    setFormData(event);
-    setSelectedCollaborators(event.collaborators || []);
-    setPrimaryImageIndex(event.images?.indexOf(event.primary_image) || 0);
+    setFormData({
+      ...event,
+      start_time: new Date(event.start_time).toISOString().slice(0, 16),
+      end_time: new Date(event.end_time).toISOString().slice(0, 16),
+    });
+
+    // Fetch event images
+    const { data: eventImages } = await supabase
+      .from('event_images')
+      .select('*')
+      .eq('event_id', event.id);
+
+    if (eventImages) {
+      const primaryImage = eventImages.find(img => img.is_primary);
+      setPrimaryImageIndex(primaryImage ? eventImages.indexOf(primaryImage) : 0);
+    }
+
+    // Fetch collaborators
+    const { data: collaborators } = await supabase
+      .from('event_collaborators')
+      .select('user_id')
+      .eq('event_id', event.id);
+
+    if (collaborators) {
+      setSelectedCollaborators(collaborators.map(c => c.user_id));
+    }
   };
 
   if (loading) {
@@ -196,14 +272,10 @@ export const EventList: React.FC = () => {
     <div className="p-6 ml-14">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Events</h1>
-        <Dialog 
-          open={isCreating || isEditing !== null} 
-          onOpenChange={(open) => {
-            if (!open) {
-              setIsCreating(false);
-              setIsEditing(null);
-              setSelectedImages([]);
-              setSelectedCollaborators([]);
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button onClick={() => {
+              setIsCreating(true);
               setFormData({
                 title: '',
                 description: '',
@@ -216,11 +288,11 @@ export const EventList: React.FC = () => {
                 max_attendees: null,
                 is_recurring: false,
               });
-            }
-          }}
-        >
-          <DialogTrigger asChild>
-            <Button onClick={() => setIsCreating(true)}>Create Event</Button>
+              setSelectedImages([]);
+              setSelectedCollaborators([]);
+            }}>
+              Create Event
+            </Button>
           </DialogTrigger>
           <DialogContent className="max-w-4xl">
             <DialogHeader>
@@ -438,40 +510,141 @@ export const EventList: React.FC = () => {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {events.map((event) => (
-          <div
-            key={event.id}
-            className="bg-white p-6 rounded-lg shadow-md"
-          >
-            <div className="flex justify-between items-start mb-4">
-              <h3 className="text-lg font-semibold">{event.title}</h3>
-              <Button
-                variant="ghost"
-                onClick={() => handleEdit(event)}
-              >
-                Edit
-              </Button>
+        {events.map((event) => {
+          const images = eventImages[event.id] || [];
+          const primaryImage = images.find(img => img.is_primary)?.url;
+
+          return (
+            <div
+              key={event.id}
+              className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300"
+            >
+              {/* Event Header with Image */}
+              <div className="relative h-48">
+                {primaryImage ? (
+                  <img
+                    src={primaryImage}
+                    alt={event.title}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
+                    <span className="text-white text-2xl font-bold">{event.title.charAt(0)}</span>
+                  </div>
+                )}
+                <div className="absolute top-4 right-4">
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    event.status === 'Scheduled' ? 'bg-blue-100 text-blue-800' :
+                    event.status === 'Ongoing' ? 'bg-green-100 text-green-800' :
+                    event.status === 'Completed' ? 'bg-gray-100 text-gray-800' :
+                    'bg-red-100 text-red-800'
+                  }`}>
+                    {event.status}
+                  </span>
+                </div>
+              </div>
+
+              {/* Event Content */}
+              <div className="p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">{event.title}</h3>
+                    <p className="text-sm text-gray-500 mt-1">{event.event_type}</p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleEdit(event)}
+                    className="text-gray-600 hover:text-gray-900"
+                  >
+                    Edit
+                  </Button>
+                </div>
+
+                <p className="text-gray-600 mb-4 line-clamp-2">{event.description}</p>
+
+                {/* Key Metrics */}
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <div className="text-sm text-gray-500">Attendees</div>
+                    <div className="text-lg font-semibold">{event.attendees_count}/{event.max_attendees || '∞'}</div>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <div className="text-sm text-gray-500">Location</div>
+                    <div className="text-lg font-semibold truncate">{event.location || 'TBD'}</div>
+                  </div>
+                </div>
+
+                {/* Timeline */}
+                <div className="space-y-2 mb-4">
+                  <div className="flex items-center text-sm text-gray-500">
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    {new Date(event.start_time).toLocaleString()}
+                  </div>
+                  <div className="flex items-center text-sm text-gray-500">
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {new Date(event.end_time).toLocaleString()}
+                  </div>
+                </div>
+
+                {/* Tags */}
+                {event.tags && event.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {event.tags.map((tag, index) => (
+                      <span
+                        key={index}
+                        className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Recurring Badge */}
+                {event.is_recurring && (
+                  <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Recurring Event
+                  </div>
+                )}
+
+                {/* Additional Images */}
+                {images.length > 1 && (
+                  <div className="grid grid-cols-4 gap-2 p-4">
+                    {images.slice(0, 4).map((img, index) => (
+                      <div key={index} className="relative aspect-square">
+                        <img
+                          src={img.url}
+                          alt={`${event.title} image ${index + 1}`}
+                          className={`w-full h-full object-cover rounded-lg ${
+                            img.is_primary ? 'ring-2 ring-indigo-500' : ''
+                          }`}
+                        />
+                        {img.is_primary && (
+                          <div className="absolute bottom-1 left-1 bg-indigo-500 text-white text-xs px-1 rounded">
+                            Primary
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {images.length > 4 && (
+                      <div className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center">
+                        <span className="text-gray-500 text-sm">+{images.length - 4}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-            <p className="text-gray-600 mb-4">{event.description}</p>
-            <div className="text-sm text-gray-500 space-y-2">
-              <div>Status: {event.status}</div>
-              <div>Type: {event.event_type}</div>
-              <div>Location: {event.location}</div>
-              <div>Attendees: {event.attendees_count}/{event.max_attendees || '∞'}</div>
-              <div>Start: {new Date(event.start_time).toLocaleString()}</div>
-              <div>End: {new Date(event.end_time).toLocaleString()}</div>
-              <div>Recurring: {event.is_recurring ? 'Yes' : 'No'}</div>
-              <div>Tags: {event.tags?.join(', ')}</div>
-            </div>
-            {event.primary_image && (
-              <img
-                src={event.primary_image}
-                alt={event.title}
-                className="mt-4 w-full h-48 object-cover rounded"
-              />
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
