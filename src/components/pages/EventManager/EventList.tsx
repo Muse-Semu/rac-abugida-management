@@ -24,6 +24,7 @@ import { Textarea } from '../../../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
 import { Checkbox } from '../../../components/ui/checkbox';
 import { useToast } from '../../../hooks/use-toast';
+
 export const EventList: React.FC = () => {
   const dispatch = useAppDispatch();
   const { events, loading, error } = useAppSelector((state) => state.events);
@@ -49,43 +50,17 @@ export const EventList: React.FC = () => {
   });
 
   useEffect(() => {
-    dispatch(fetchEvents());
-    fetchUsers();
+    const fetchEventsAndImages = async () => {
+      try {
+        // Fetch images for all events
+        const { data: imagesData, error: imagesError } = await supabase
+          .from('event_images')
+          .select('*');
 
-    // Set up real-time subscription
-    const subscription = supabase
-      .channel('events_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'events',
-        },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            dispatch(createEvent(payload.new as Event));
-          } else if (payload.eventType === 'UPDATE') {
-            dispatch(updateEvent({ eventId: payload.new.id, eventData: payload.new }));
-          }
-        }
-      )
-      .subscribe();
+        if (imagesError) throw imagesError;
 
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [dispatch]);
-
-  useEffect(() => {
-    // Fetch images for all events
-    const fetchEventImages = async () => {
-      const { data: images } = await supabase
-        .from('event_images')
-        .select('*');
-
-      if (images) {
-        const imagesByEvent = images.reduce((acc, img) => {
+        // Group images by event_id
+        const imagesByEvent = imagesData.reduce((acc, img) => {
           if (!acc[img.event_id]) {
             acc[img.event_id] = [];
           }
@@ -97,11 +72,20 @@ export const EventList: React.FC = () => {
         }, {} as Record<number, { url: string; is_primary: boolean }[]>);
 
         setEventImages(imagesByEvent);
+      } catch (error) {
+        console.error('Error fetching event images:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load event images.",
+          variant: "destructive",
+        });
       }
     };
 
-    fetchEventImages();
-  }, [events]);
+    dispatch(fetchEvents());
+    fetchUsers();
+    fetchEventsAndImages();
+  }, [dispatch]);
 
   const fetchUsers = async () => {
     const { data } = await supabase.from('users').select('*');
@@ -137,20 +121,38 @@ export const EventList: React.FC = () => {
       // Upload images first
       const imageUrls = await Promise.all(
         selectedImages.map(async (image) => {
-          const fileExt = image.name.split('.').pop();
-          const fileName = `${Math.random()}.${fileExt}`;
-          const { data, error } = await supabase.storage
-            .from('event-images')
-            .upload(fileName, image);
-          if (error) {
-            toast({
-              title: "Error",
-              description: `Failed to upload image: ${error.message}`,
-              variant: "destructive",
-            });
+          try {
+            const fileExt = image.name.split('.').pop();
+            const fileName = `${Math.random()}.${fileExt}`;
+            
+            // Try to upload directly to the bucket
+            const { data, error } = await supabase.storage
+              .from('event-images')
+              .upload(fileName, image, {
+                cacheControl: '3600',
+                upsert: false
+              });
+
+            if (error) {
+              console.error('Image upload error:', error);
+              toast({
+                title: "Error",
+                description: `Failed to upload image: ${error.message}`,
+                variant: "destructive",
+              });
+              throw error;
+            }
+
+            // Get the public URL
+            const { data: { publicUrl } } = supabase.storage
+              .from('event-images')
+              .getPublicUrl(data.path);
+
+            return publicUrl;
+          } catch (error: any) {
+            console.error('Error in image upload:', error);
             throw error;
           }
-          return data.path;
         })
       );
 
@@ -162,33 +164,80 @@ export const EventList: React.FC = () => {
       let eventId: number;
 
       if (isEditing) {
-        await dispatch(updateEvent({ eventId: isEditing, eventData }));
+        // First update the event
+        const { error: updateError } = await supabase
+          .from('events')
+          .update(eventData)
+          .eq('id', isEditing);
+
+        if (updateError) throw updateError;
         eventId = isEditing;
+
+        // Delete existing images if any new images are being uploaded
+        if (selectedImages.length > 0) {
+          const { error: deleteError } = await supabase
+            .from('event_images')
+            .delete()
+            .eq('event_id', eventId);
+
+          if (deleteError) throw deleteError;
+        }
+
+        // Delete existing collaborators
+        const { error: deleteCollabError } = await supabase
+          .from('event_collaborators')
+          .delete()
+          .eq('event_id', eventId);
+
+        if (deleteCollabError) throw deleteCollabError;
       } else {
-        const result = await dispatch(createEvent(eventData as Omit<Event, 'id' | 'created_at' | 'updated_at' | 'attendees_count'>));
-        eventId = (result.payload as Event).id;
+        const { data, error: createError } = await supabase
+          .from('events')
+          .insert(eventData)
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        eventId = data.id;
       }
 
-      // Insert images into event_images table
-      if (imageUrls.length > 0) {
-        const imageRecords = imageUrls.map((url, index) => ({
-          event_id: eventId,
-          image_url: url,
-          is_primary: index === primaryImageIndex
-        }));
-
-        const { error: imageError } = await supabase
-          .from('event_images')
-          .insert(imageRecords);
-
-        if (imageError) {
-          throw imageError;
-        }
+      // Save images to event_images table
+      if (eventId && selectedImages.length > 0) {
+        await Promise.all(
+          imageUrls.map(async (url, index) => {
+            const { error } = await supabase
+              .from('event_images')
+              .insert({
+                event_id: eventId,
+                image_url: url,
+                is_primary: index === primaryImageIndex
+              });
+            
+            if (error) {
+              console.error('Error saving image:', error);
+              throw error;
+            }
+          })
+        );
       }
 
       // Add collaborators
-      for (const userId of selectedCollaborators) {
-        await dispatch(addCollaborator({ eventId, userId }));
+      if (selectedCollaborators.length > 0) {
+        await Promise.all(
+          selectedCollaborators.map(async (userId) => {
+            const { error } = await supabase
+              .from('event_collaborators')
+              .insert({
+                event_id: eventId,
+                user_id: userId
+              });
+            
+            if (error) {
+              console.error('Error adding collaborator:', error);
+              throw error;
+            }
+          })
+        );
       }
 
       toast({
@@ -197,7 +246,6 @@ export const EventList: React.FC = () => {
         variant: "default",
       });
 
-      // Reset form and close dialog
       setIsCreating(false);
       setIsEditing(null);
       setSelectedImages([]);
@@ -215,11 +263,8 @@ export const EventList: React.FC = () => {
         is_recurring: false,
       });
 
-      // Close the dialog
-      const dialog = document.querySelector('[role="dialog"]');
-      if (dialog) {
-        (dialog as HTMLElement).style.display = 'none';
-      }
+      // Refresh the events list
+      dispatch(fetchEvents());
     } catch (error: any) {
       console.error('Error saving event:', error);
       toast({
@@ -232,32 +277,53 @@ export const EventList: React.FC = () => {
 
   const handleEdit = async (event: Event) => {
     setIsEditing(event.id);
-    setFormData({
+    
+    // Format dates for the form
+    const formattedEvent = {
       ...event,
       start_time: new Date(event.start_time).toISOString().slice(0, 16),
       end_time: new Date(event.end_time).toISOString().slice(0, 16),
-    });
-
+    };
+    
+    setFormData(formattedEvent);
+    
     // Fetch event images
-    const { data: eventImages } = await supabase
+    const { data: images, error: imagesError } = await supabase
       .from('event_images')
       .select('*')
       .eq('event_id', event.id);
 
-    if (eventImages) {
-      const primaryImage = eventImages.find(img => img.is_primary);
-      setPrimaryImageIndex(primaryImage ? eventImages.indexOf(primaryImage) : 0);
+    if (imagesError) {
+      console.error('Error fetching event images:', imagesError);
+      return;
     }
 
-    // Fetch collaborators
-    const { data: collaborators } = await supabase
+    // Fetch event collaborators
+    const { data: collaborators, error: collaboratorsError } = await supabase
       .from('event_collaborators')
       .select('user_id')
       .eq('event_id', event.id);
 
-    if (collaborators) {
-      setSelectedCollaborators(collaborators.map(c => c.user_id));
+    if (collaboratorsError) {
+      console.error('Error fetching event collaborators:', collaboratorsError);
+      return;
     }
+
+    // Set selected images and primary image index
+    const imageFiles = await Promise.all(
+      images.map(async (img) => {
+        const response = await fetch(img.image_url);
+        const blob = await response.blob();
+        return new File([blob], img.image_url.split('/').pop() || 'image.jpg', { type: blob.type });
+      })
+    );
+
+    setSelectedImages(imageFiles);
+    const primaryIndex = images.findIndex(img => img.is_primary);
+    setPrimaryImageIndex(primaryIndex >= 0 ? primaryIndex : 0);
+    
+    // Set selected collaborators
+    setSelectedCollaborators(collaborators.map(c => c.user_id));
   };
 
   if (loading) {
@@ -272,10 +338,14 @@ export const EventList: React.FC = () => {
     <div className="p-6 ml-14">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Events</h1>
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button onClick={() => {
-              setIsCreating(true);
+        <Dialog 
+          open={isCreating || isEditing !== null} 
+          onOpenChange={(open) => {
+            if (!open) {
+              setIsCreating(false);
+              setIsEditing(null);
+              setSelectedImages([]);
+              setSelectedCollaborators([]);
               setFormData({
                 title: '',
                 description: '',
@@ -288,11 +358,11 @@ export const EventList: React.FC = () => {
                 max_attendees: null,
                 is_recurring: false,
               });
-              setSelectedImages([]);
-              setSelectedCollaborators([]);
-            }}>
-              Create Event
-            </Button>
+            }
+          }}
+        >
+          <DialogTrigger asChild>
+            <Button onClick={() => setIsCreating(true)}>Create Event</Button>
           </DialogTrigger>
           <DialogContent className="max-w-4xl">
             <DialogHeader>
@@ -513,7 +583,7 @@ export const EventList: React.FC = () => {
         {events.map((event) => {
           const images = eventImages[event.id] || [];
           const primaryImage = images.find(img => img.is_primary)?.url;
-
+          
           return (
             <div
               key={event.id}

@@ -1,31 +1,21 @@
-import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { supabase } from '../../supabaseClient';
-
-interface Event {
-  id: number;
-  title: string;
-  description: string;
-  start_time: string;
-  end_time: string;
-  location: string;
-  status: 'Scheduled' | 'Ongoing' | 'Completed' | 'Cancelled';
-  event_type: 'Public' | 'Private' | 'Internal';
-  tags: string[];
-  attendees_count: number;
-  max_attendees: number | null;
-  is_recurring: boolean;
-  owner_id: string;
-  created_at: string;
-  updated_at: string;
-  primary_image?: string;
-  images?: string[];
-  collaborators?: string[];
-}
+import { Event } from '../../types';
 
 interface EventState {
   events: Event[];
   loading: boolean;
   error: string | null;
+}
+
+interface EventImage {
+  url: string;
+  is_primary: boolean;
+}
+
+interface EventImageRecord {
+  image_url: string;
+  is_primary: boolean;
 }
 
 const initialState: EventState = {
@@ -34,160 +24,193 @@ const initialState: EventState = {
   error: null,
 };
 
-// Async thunks
 export const fetchEvents = createAsyncThunk(
   'events/fetchEvents',
-  async (_, { rejectWithValue }) => {
+  async () => {
     try {
-      // Get current user's role
-      const { data: { user } } = await supabase.auth.getUser();
-      const { data: userRoles } = await supabase
-        .from('user_roles')
-        .select('roles(role_name)')
-        .eq('user_id', user?.id);
-
-      const isAdmin = userRoles?.some((ur: any) => ur.roles.role_name === 'Admin');
-      const isOrganizer = userRoles?.some((ur: any) => ur.roles.role_name === 'Organizer');
-
-      // Base query
-      let query = supabase
+      // Fetch events with their images using a join
+      const { data: events, error: eventsError } = await supabase
         .from('events')
         .select(`
           *,
-          event_collaborators(user_id)
-        `);
+          event_images (
+            image_url,
+            is_primary
+          )
+        `)
+        .order('created_at', { ascending: false });
 
-      // If not admin or organizer, only show events where user is creator or collaborator
-      if (!isAdmin && !isOrganizer) {
-        query = query.or(`owner_id.eq.${user?.id},event_collaborators.user_id.eq.${user?.id}`);
-      }
+      if (eventsError) throw eventsError;
 
-      const { data, error } = await query;
+      // Transform the data to match the expected format
+      const transformedEvents = events.map(event => ({
+        ...event,
+        images: (event.event_images as EventImageRecord[] || []).map(img => ({
+          url: img.image_url,
+          is_primary: img.is_primary
+        }))
+      }));
 
-      if (error) throw error;
-
-      return data;
-    } catch (error) {
-      return rejectWithValue((error as Error).message);
+      return transformedEvents;
+    } catch (error: any) {
+      throw new Error(error.message);
     }
   }
 );
 
 export const createEvent = createAsyncThunk(
   'events/createEvent',
-  async (eventData: Omit<Event, 'id' | 'created_at' | 'updated_at' | 'attendees_count'>, { rejectWithValue }) => {
+  async (eventData: Omit<Event, 'id' | 'created_at' | 'updated_at' | 'attendees_count'>) => {
     try {
-      // Check if user has permission
-      const { data: { user } } = await supabase.auth.getUser();
-      const { data: userRoles } = await supabase
-        .from('user_roles')
-        .select('roles(role_name)')
-        .eq('user_id', user?.id);
-
-      const isAdmin = userRoles?.some((ur: any) => ur.roles.role_name === 'Admin');
-      const isOrganizer = userRoles?.some((ur: any) => ur.roles.role_name === 'Organizer');
-
-      if (!isAdmin && !isOrganizer) {
-        throw new Error('You do not have permission to create events');
-      }
+      // Extract images from eventData
+      const { images, ...eventFields } = eventData as any;
 
       // Create event
-      const { data: event, error } = await supabase
+      const { data: event, error: eventError } = await supabase
         .from('events')
-        .insert({
-          ...eventData,
-          owner_id: user?.id,
-          attendees_count: 0,
-        })
+        .insert(eventFields)
         .select()
         .single();
 
-      if (error) throw error;
+      if (eventError) throw eventError;
 
-      return event;
-    } catch (error) {
-      return rejectWithValue((error as Error).message);
+      // Handle images if they exist
+      if (images && images.length > 0) {
+        const { error: imagesError } = await supabase
+          .from('event_images')
+          .insert(
+            (images as EventImage[]).map(img => ({
+              event_id: event.id,
+              image_url: img.url,
+              is_primary: img.is_primary
+            }))
+          );
+
+        if (imagesError) throw imagesError;
+      }
+
+      // Fetch the complete event with images
+      const { data: completeEvent, error: fetchError } = await supabase
+        .from('events')
+        .select(`
+          *,
+          event_images (
+            image_url,
+            is_primary
+          )
+        `)
+        .eq('id', event.id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      return {
+        ...completeEvent,
+        images: (completeEvent.event_images as EventImageRecord[] || []).map(img => ({
+          url: img.image_url,
+          is_primary: img.is_primary
+        }))
+      };
+    } catch (error: any) {
+      throw new Error(error.message);
     }
   }
 );
 
 export const updateEvent = createAsyncThunk(
   'events/updateEvent',
-  async ({ eventId, eventData }: { eventId: number; eventData: Partial<Event> }, { rejectWithValue }) => {
+  async ({ eventId, eventData }: { eventId: number; eventData: Partial<Event> }) => {
     try {
-      // Check if user has permission
-      const { data: { user } } = await supabase.auth.getUser();
-      const { data: event } = await supabase
-        .from('events')
-        .select('owner_id')
-        .eq('id', eventId)
-        .single();
-
-      const { data: userRoles } = await supabase
-        .from('user_roles')
-        .select('roles(role_name)')
-        .eq('user_id', user?.id);
-
-      const isAdmin = userRoles?.some((ur: any) => ur.roles.role_name === 'Admin');
-      const isOrganizer = userRoles?.some((ur: any) => ur.roles.role_name === 'Organizer');
-      const isOwner = event?.owner_id === user?.id;
-
-      if (!isAdmin && !isOrganizer && !isOwner) {
-        throw new Error('You do not have permission to update this event');
-      }
+      // Extract images from eventData
+      const { images, ...eventFields } = eventData as any;
 
       // Update event
-      const { data, error } = await supabase
+      const { data: event, error: eventError } = await supabase
         .from('events')
-        .update(eventData)
+        .update(eventFields)
         .eq('id', eventId)
         .select()
         .single();
 
-      if (error) throw error;
+      if (eventError) throw eventError;
 
-      return data;
-    } catch (error) {
-      return rejectWithValue((error as Error).message);
+      // Handle images if they exist
+      if (images) {
+        // Delete existing images
+        const { error: deleteError } = await supabase
+          .from('event_images')
+          .delete()
+          .eq('event_id', eventId);
+
+        if (deleteError) throw deleteError;
+
+        // Insert new images
+        if (images.length > 0) {
+          const { error: insertError } = await supabase
+            .from('event_images')
+            .insert(
+              (images as EventImage[]).map(img => ({
+                event_id: eventId,
+                image_url: img.url,
+                is_primary: img.is_primary
+              }))
+            );
+
+          if (insertError) throw insertError;
+        }
+      }
+
+      // Fetch the complete event with images
+      const { data: completeEvent, error: fetchError } = await supabase
+        .from('events')
+        .select(`
+          *,
+          event_images (
+            image_url,
+            is_primary
+          )
+        `)
+        .eq('id', eventId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      return {
+        ...completeEvent,
+        images: (completeEvent.event_images as EventImageRecord[] || []).map(img => ({
+          url: img.image_url,
+          is_primary: img.is_primary
+        }))
+      };
+    } catch (error: any) {
+      throw new Error(error.message);
     }
   }
 );
 
 export const addCollaborator = createAsyncThunk(
   'events/addCollaborator',
-  async ({ eventId, userId }: { eventId: number; userId: string }, { rejectWithValue }) => {
-    try {
-      const { error } = await supabase
-        .from('event_collaborators')
-        .insert({
-          event_id: eventId,
-          user_id: userId,
-        });
+  async ({ eventId, userId }: { eventId: number; userId: string }) => {
+    const { error } = await supabase
+      .from('event_collaborators')
+      .insert({ event_id: eventId, user_id: userId });
 
-      if (error) throw error;
-
-      return { eventId, userId };
-    } catch (error) {
-      return rejectWithValue((error as Error).message);
-    }
+    if (error) throw error;
+    return { eventId, userId };
   }
 );
 
 export const removeCollaborator = createAsyncThunk(
   'events/removeCollaborator',
-  async ({ eventId, userId }: { eventId: number; userId: string }, { rejectWithValue }) => {
-    try {
-      const { error } = await supabase
-        .from('event_collaborators')
-        .delete()
-        .match({ event_id: eventId, user_id: userId });
+  async ({ eventId, userId }: { eventId: number; userId: string }) => {
+    const { error } = await supabase
+      .from('event_collaborators')
+      .delete()
+      .eq('event_id', eventId)
+      .eq('user_id', userId);
 
-      if (error) throw error;
-
-      return { eventId, userId };
-    } catch (error) {
-      return rejectWithValue((error as Error).message);
-    }
+    if (error) throw error;
+    return { eventId, userId };
   }
 );
 
@@ -197,7 +220,6 @@ const eventSlice = createSlice({
   reducers: {},
   extraReducers: (builder) => {
     builder
-      // Fetch Events
       .addCase(fetchEvents.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -208,51 +230,15 @@ const eventSlice = createSlice({
       })
       .addCase(fetchEvents.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload as string;
-      })
-      // Create Event
-      .addCase(createEvent.pending, (state) => {
-        state.loading = true;
-        state.error = null;
+        state.error = action.error.message || 'Failed to fetch events';
       })
       .addCase(createEvent.fulfilled, (state, action) => {
-        state.loading = false;
         state.events.unshift(action.payload);
       })
-      .addCase(createEvent.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload as string;
-      })
-      // Update Event
-      .addCase(updateEvent.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
       .addCase(updateEvent.fulfilled, (state, action) => {
-        state.loading = false;
         const index = state.events.findIndex(event => event.id === action.payload.id);
         if (index !== -1) {
-          state.events[index] = { ...state.events[index], ...action.payload };
-        }
-      })
-      .addCase(updateEvent.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload as string;
-      })
-      // Add Collaborator
-      .addCase(addCollaborator.fulfilled, (state, action) => {
-        const event = state.events.find(e => e.id === action.payload.eventId);
-        if (event) {
-          // Update team_members_count
-          event.attendees_count = (event.attendees_count || 0) + 1;
-        }
-      })
-      // Remove Collaborator
-      .addCase(removeCollaborator.fulfilled, (state, action) => {
-        const event = state.events.find(e => e.id === action.payload.eventId);
-        if (event) {
-          // Update team_members_count
-          event.attendees_count = Math.max((event.attendees_count || 0) - 1, 0);
+          state.events[index] = action.payload;
         }
       });
   },
