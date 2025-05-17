@@ -158,8 +158,21 @@ export const ProjectList: React.FC = () => {
         })
       );
 
+      // Remove any non-project fields from the data
       const projectData = {
-        ...formattedData,
+        name: formattedData.name,
+        description: formattedData.description,
+        status: formattedData.status,
+        start_date: formattedData.start_date,
+        end_date: formattedData.end_date,
+        budget: formattedData.budget,
+        progress_percentage: formattedData.progress_percentage,
+        tags: formattedData.tags,
+        max_team_members: formattedData.max_team_members,
+        is_archived: formattedData.is_archived,
+        project_type: formattedData.project_type,
+        project_target: formattedData.project_target,
+        project_target_type: formattedData.project_target_type,
         owner_id: (await supabase.auth.getUser()).data.user?.id,
       };
 
@@ -168,21 +181,45 @@ export const ProjectList: React.FC = () => {
 
       let projectId;
       if (isEditing) {
-        const result = await dispatch(updateProject({ projectId: isEditing, projectData }));
-        console.log('Update result:', result);
+        // First update the project
+        const { error: updateError } = await supabase
+          .from('projects')
+          .update(projectData)
+          .eq('id', isEditing);
+
+        if (updateError) throw updateError;
         projectId = isEditing;
-      } else {
-        const result = await dispatch(createProject(projectData as Omit<Project, 'id' | 'created_at' | 'updated_at' | 'team_members_count'>));
-        console.log('Create result:', result);
-        if (result.type === 'projects/createProject/fulfilled') {
-          projectId = result.payload.id;
-        } else {
-          throw new Error(result.payload);
+
+        // Delete existing images if any new images are being uploaded
+        if (selectedImages.length > 0) {
+          const { error: deleteError } = await supabase
+            .from('project_images')
+            .delete()
+            .eq('project_id', projectId);
+
+          if (deleteError) throw deleteError;
         }
+
+        // Delete existing collaborators
+        const { error: deleteCollabError } = await supabase
+          .from('project_collaborators')
+          .delete()
+          .eq('project_id', projectId);
+
+        if (deleteCollabError) throw deleteCollabError;
+      } else {
+        const { data, error: createError } = await supabase
+          .from('projects')
+          .insert(projectData)
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        projectId = data.id;
       }
 
       // Save images to project_images table
-      if (projectId) {
+      if (projectId && selectedImages.length > 0) {
         await Promise.all(
           imageUrls.map(async (url, index) => {
             const { error } = await supabase
@@ -199,8 +236,21 @@ export const ProjectList: React.FC = () => {
             }
           })
         );
+      }
 
-        // Add collaborators to project_collaborators table
+      // Get the Member role ID
+      const { data: memberRole } = await supabase
+        .from('roles')
+        .select('id')
+        .eq('role_name', 'Member')
+        .single();
+
+      if (!memberRole) {
+        throw new Error('Member role not found');
+      }
+
+      // Add collaborators to project_collaborators table
+      if (selectedCollaborators.length > 0) {
         await Promise.all(
           selectedCollaborators.map(async (userId) => {
             const { error } = await supabase
@@ -208,7 +258,7 @@ export const ProjectList: React.FC = () => {
               .insert({
                 project_id: projectId,
                 user_id: userId,
-                role: 'member' // Default role
+                role_id: memberRole.id
               });
             
             if (error) {
@@ -244,6 +294,9 @@ export const ProjectList: React.FC = () => {
         project_target: 0,
         project_target_type: 'Revenue',
       });
+
+      // Refresh the projects list
+      dispatch(fetchProjects());
     } catch (error: any) {
       console.error('Error saving project:', error);
       console.error('Error details:', {
