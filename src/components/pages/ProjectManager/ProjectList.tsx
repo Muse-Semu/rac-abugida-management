@@ -656,50 +656,127 @@ export const ProjectList: React.FC = () => {
           return (
             <div
               key={project.id}
-              className="bg-white p-6 rounded-lg shadow-md"
+              className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300"
             >
-              <div className="flex justify-between items-start mb-4">
-                <h3 className="text-lg font-semibold">{project.name}</h3>
-                <Button
-                  variant="ghost"
-                  onClick={() => handleEdit(project)}
-                >
-                  Edit
-                </Button>
-              </div>
-              <p className="text-gray-600 mb-4">{project.description}</p>
-              <div className="text-sm text-gray-500 space-y-2">
-                <div>Status: {project.status}</div>
-                <div>Type: {project.project_type}</div>
-                <div>Budget: ${project.budget}</div>
-                <div>Progress: {project.progress_percentage}%</div>
-                <div>Target: ${project.project_target} ({project.project_target_type})</div>
-                <div>Team Members: {project.team_members_count}/{project.max_team_members || '∞'}</div>
-                <div>Start: {new Date(project.start_date).toLocaleDateString()}</div>
-                <div>End: {new Date(project.end_date).toLocaleDateString()}</div>
-                <div>Tags: {project.tags?.join(', ')}</div>
-              </div>
-              {primaryImage && (
-                <img
-                  src={primaryImage}
-                  alt={project.name}
-                  className="mt-4 w-full h-48 object-cover rounded"
-                />
-              )}
-              {projectImgs.length > 1 && (
-                <div className="grid grid-cols-4 gap-2 mt-2">
-                  {projectImgs.map((img, index) => (
-                    <img
-                      key={index}
-                      src={img.url}
-                      alt={`${project.name} image ${index + 1}`}
-                      className={`w-full h-20 object-cover rounded ${
-                        img.is_primary ? 'ring-2 ring-indigo-500' : ''
-                      }`}
-                    />
-                  ))}
+              {/* Project Header with Image */}
+              <div className="relative h-48">
+                {primaryImage ? (
+                  <img
+                    src={primaryImage}
+                    alt={project.name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center">
+                    <span className="text-white text-2xl font-bold">{project.name.charAt(0)}</span>
+                  </div>
+                )}
+                <div className="absolute top-4 right-4">
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    project.status === 'Active' ? 'bg-green-100 text-green-800' :
+                    project.status === 'Completed' ? 'bg-blue-100 text-blue-800' :
+                    project.status === 'On Hold' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-red-100 text-red-800'
+                  }`}>
+                    {project.status}
+                  </span>
                 </div>
-              )}
+              </div>
+
+              {/* Project Content */}
+              <div className="p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">{project.name}</h3>
+                    <p className="text-sm text-gray-500 mt-1">{project.project_type}</p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleEdit(project)}
+                    className="text-gray-600 hover:text-gray-900"
+                  >
+                    Edit
+                  </Button>
+                </div>
+
+                <p className="text-gray-600 mb-4 line-clamp-2">{project.description}</p>
+
+                {/* Key Metrics */}
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <div className="text-sm text-gray-500">Budget</div>
+                    <div className="text-lg font-semibold">${project.budget.toLocaleString()}</div>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <div className="text-sm text-gray-500">Team Size</div>
+                    <div className="text-lg font-semibold">{project.team_members_count}/{project.max_team_members || '∞'}</div>
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="mb-4">
+                  <div className="flex justify-between text-sm text-gray-600 mb-1">
+                    <span>Progress</span>
+                    <span>{project.progress_percentage}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${project.progress_percentage}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Timeline */}
+                <div className="flex items-center text-sm text-gray-500 mb-4">
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  {new Date(project.start_date).toLocaleDateString()} - {new Date(project.end_date).toLocaleDateString()}
+                </div>
+
+                {/* Tags */}
+                {project.tags && project.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {project.tags.map((tag, index) => (
+                      <span
+                        key={index}
+                        className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Additional Images */}
+                {projectImgs.length > 1 && (
+                  <div className="grid grid-cols-4 gap-2">
+                    {projectImgs.slice(0, 4).map((img, index) => (
+                      <div key={index} className="relative aspect-square">
+                        <img
+                          src={img.url}
+                          alt={`${project.name} image ${index + 1}`}
+                          className={`w-full h-full object-cover rounded-lg ${
+                            img.is_primary ? 'ring-2 ring-indigo-500' : ''
+                          }`}
+                        />
+                        {img.is_primary && (
+                          <div className="absolute bottom-1 left-1 bg-indigo-500 text-white text-xs px-1 rounded">
+                            Primary
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {projectImgs.length > 4 && (
+                      <div className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center">
+                        <span className="text-gray-500 text-sm">+{projectImgs.length - 4}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
