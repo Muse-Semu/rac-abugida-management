@@ -26,7 +26,7 @@ import { Checkbox } from '../../../components/ui/checkbox';
 import { useToast } from '../../../hooks/use-toast';
 export const ProjectList: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { projects, loading, error } = useAppSelector((state) => state.projects);
+  const { projects: projectsFromStore, loading, error } = useAppSelector((state) => state.projects);
   const { toast } = useToast();
   const [isCreating, setIsCreating] = useState(false);
   const [isEditing, setIsEditing] = useState<number | null>(null);
@@ -34,6 +34,7 @@ export const ProjectList: React.FC = () => {
   const [selectedCollaborators, setSelectedCollaborators] = useState<string[]>([]);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [primaryImageIndex, setPrimaryImageIndex] = useState<number>(0);
+  const [projectImages, setProjectImages] = useState<Record<number, { url: string; is_primary: boolean }[]>>({});
   const [formData, setFormData] = useState<Partial<Project>>({
     name: '',
     description: '',
@@ -51,8 +52,41 @@ export const ProjectList: React.FC = () => {
   });
 
   useEffect(() => {
+    const fetchProjectsAndImages = async () => {
+      try {
+        // Fetch images for all projects
+        const { data: imagesData, error: imagesError } = await supabase
+          .from('project_images')
+          .select('*');
+
+        if (imagesError) throw imagesError;
+
+        // Group images by project_id
+        const imagesByProject = imagesData.reduce((acc, img) => {
+          if (!acc[img.project_id]) {
+            acc[img.project_id] = [];
+          }
+          acc[img.project_id].push({
+            url: img.image_url,
+            is_primary: img.is_primary
+          });
+          return acc;
+        }, {} as Record<number, { url: string; is_primary: boolean }[]>);
+
+        setProjectImages(imagesByProject);
+      } catch (error) {
+        console.error('Error fetching project images:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load project images.",
+          variant: "destructive",
+        });
+      }
+    };
+
     dispatch(fetchProjects());
     fetchUsers();
+    fetchProjectsAndImages();
   }, [dispatch]);
 
   const fetchUsers = async () => {
@@ -86,34 +120,14 @@ export const ProjectList: React.FC = () => {
         end_date: new Date(formData.end_date!).toISOString(),
       };
 
-      // First ensure the bucket exists
-      const { data: buckets } = await supabase.storage.listBuckets();
-      const projectImagesBucket = buckets?.find(b => b.name === 'project-images');
-      
-      if (!projectImagesBucket) {
-        const { error: createBucketError } = await supabase.storage.createBucket('project-images', {
-          public: true,
-          allowedMimeTypes: ['image/png', 'image/jpeg', 'image/gif'],
-          fileSizeLimit: 5242880 // 5MB
-        });
-        
-        if (createBucketError) {
-          console.error('Error creating bucket:', createBucketError);
-          toast({
-            title: "Error",
-            description: "Failed to create storage bucket. Please contact support.",
-            variant: "destructive",
-          });
-          throw createBucketError;
-        }
-      }
-
       // Upload images first
       const imageUrls = await Promise.all(
         selectedImages.map(async (image) => {
           try {
             const fileExt = image.name.split('.').pop();
             const fileName = `${Math.random()}.${fileExt}`;
+            
+            // Try to upload directly to the bucket
             const { data, error } = await supabase.storage
               .from('project-images')
               .upload(fileName, image, {
@@ -146,25 +160,50 @@ export const ProjectList: React.FC = () => {
 
       const projectData = {
         ...formattedData,
-        primary_image: imageUrls[primaryImageIndex],
-        images: imageUrls,
         owner_id: (await supabase.auth.getUser()).data.user?.id,
       };
 
       console.log('Project Data being sent:', projectData);
       console.log('Current user:', (await supabase.auth.getUser()).data.user);
 
+      let projectId;
       if (isEditing) {
         const result = await dispatch(updateProject({ projectId: isEditing, projectData }));
         console.log('Update result:', result);
+        projectId = isEditing;
       } else {
         const result = await dispatch(createProject(projectData as Omit<Project, 'id' | 'created_at' | 'updated_at' | 'team_members_count'>));
         console.log('Create result:', result);
+        if (result.type === 'projects/createProject/fulfilled') {
+          projectId = result.payload.id;
+        } else {
+          throw new Error(result.payload);
+        }
+      }
+
+      // Save images to project_images table
+      if (projectId) {
+        await Promise.all(
+          imageUrls.map(async (url, index) => {
+            const { error } = await supabase
+              .from('project_images')
+              .insert({
+                project_id: projectId,
+                image_url: url,
+                is_primary: index === primaryImageIndex
+              });
+            
+            if (error) {
+              console.error('Error saving image:', error);
+              throw error;
+            }
+          })
+        );
       }
 
       // Add collaborators
       for (const userId of selectedCollaborators) {
-        await dispatch(addCollaborator({ projectId: isEditing || 0, userId }));
+        await dispatch(addCollaborator({ projectId: projectId || 0, userId }));
       }
 
       toast({
@@ -210,11 +249,41 @@ export const ProjectList: React.FC = () => {
     }
   };
 
-  const handleEdit = (project: Project) => {
+  const handleEdit = async (project: Project) => {
     setIsEditing(project.id);
-    setFormData(project);
-    setSelectedCollaborators(project.collaborators || []);
-    setPrimaryImageIndex(project.images?.indexOf(project.primary_image) || 0);
+    
+    // Format dates for the form
+    const formattedProject = {
+      ...project,
+      start_date: new Date(project.start_date).toISOString().split('T')[0],
+      end_date: new Date(project.end_date).toISOString().split('T')[0],
+    };
+    
+    setFormData(formattedProject);
+    
+    // Fetch project images
+    const { data: images, error } = await supabase
+      .from('project_images')
+      .select('*')
+      .eq('project_id', project.id);
+
+    if (error) {
+      console.error('Error fetching project images:', error);
+      return;
+    }
+
+    // Set selected images and primary image index
+    const imageFiles = await Promise.all(
+      images.map(async (img) => {
+        const response = await fetch(img.image_url);
+        const blob = await response.blob();
+        return new File([blob], img.image_url.split('/').pop() || 'image.jpg', { type: blob.type });
+      })
+    );
+
+    setSelectedImages(imageFiles);
+    const primaryIndex = images.findIndex(img => img.is_primary);
+    setPrimaryImageIndex(primaryIndex >= 0 ? primaryIndex : 0);
   };
 
   if (loading) {
@@ -500,41 +569,60 @@ export const ProjectList: React.FC = () => {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {projects.map((project) => (
-          <div
-            key={project.id}
-            className="bg-white p-6 rounded-lg shadow-md"
-          >
-            <div className="flex justify-between items-start mb-4">
-              <h3 className="text-lg font-semibold">{project.name}</h3>
-              <Button
-                variant="ghost"
-                onClick={() => handleEdit(project)}
-              >
-                Edit
-              </Button>
+        {projectsFromStore.map((project) => {
+          const projectImgs = projectImages[project.id] || [];
+          const primaryImage = projectImgs.find(img => img.is_primary)?.url;
+          
+          return (
+            <div
+              key={project.id}
+              className="bg-white p-6 rounded-lg shadow-md"
+            >
+              <div className="flex justify-between items-start mb-4">
+                <h3 className="text-lg font-semibold">{project.name}</h3>
+                <Button
+                  variant="ghost"
+                  onClick={() => handleEdit(project)}
+                >
+                  Edit
+                </Button>
+              </div>
+              <p className="text-gray-600 mb-4">{project.description}</p>
+              <div className="text-sm text-gray-500 space-y-2">
+                <div>Status: {project.status}</div>
+                <div>Type: {project.project_type}</div>
+                <div>Budget: ${project.budget}</div>
+                <div>Progress: {project.progress_percentage}%</div>
+                <div>Target: ${project.project_target} ({project.project_target_type})</div>
+                <div>Team Members: {project.team_members_count}/{project.max_team_members || '∞'}</div>
+                <div>Start: {new Date(project.start_date).toLocaleDateString()}</div>
+                <div>End: {new Date(project.end_date).toLocaleDateString()}</div>
+                <div>Tags: {project.tags?.join(', ')}</div>
+              </div>
+              {primaryImage && (
+                <img
+                  src={primaryImage}
+                  alt={project.name}
+                  className="mt-4 w-full h-48 object-cover rounded"
+                />
+              )}
+              {projectImgs.length > 1 && (
+                <div className="grid grid-cols-4 gap-2 mt-2">
+                  {projectImgs.map((img, index) => (
+                    <img
+                      key={index}
+                      src={img.url}
+                      alt={`${project.name} image ${index + 1}`}
+                      className={`w-full h-20 object-cover rounded ${
+                        img.is_primary ? 'ring-2 ring-indigo-500' : ''
+                      }`}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-            <p className="text-gray-600 mb-4">{project.description}</p>
-            <div className="text-sm text-gray-500 space-y-2">
-              <div>Status: {project.status}</div>
-              <div>Type: {project.project_type}</div>
-              <div>Budget: ${project.budget}</div>
-              <div>Progress: {project.progress_percentage}%</div>
-              <div>Target: ${project.project_target} ({project.project_target_type})</div>
-              <div>Team Members: {project.team_members_count}/{project.max_team_members || '∞'}</div>
-              <div>Start: {new Date(project.start_date).toLocaleDateString()}</div>
-              <div>End: {new Date(project.end_date).toLocaleDateString()}</div>
-              <div>Tags: {project.tags?.join(', ')}</div>
-            </div>
-            {project.primary_image && (
-              <img
-                src={project.primary_image}
-                alt={project.name}
-                className="mt-4 w-full h-48 object-cover rounded"
-              />
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
