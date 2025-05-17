@@ -5,7 +5,6 @@ import { fetchProjects } from "../../../store/slices/projectSlice";
 import { fetchUsers } from "../../../store/slices/userSlice";
 import { Sidebar } from "../../Layout/Sidebar";
 import { DashboardTour } from "../../Tour/DashboardTour";
-import { EventList } from "../EventManager/EventList";
 import { ProjectList } from "../ProjectManager/ProjectList";
 import { UserList } from "../UserManager/UserList";
 import {
@@ -14,9 +13,9 @@ import {
   CardHeader,
   CardTitle,
 } from "../../../components/ui/card";
-import { Button } from "../../../components/ui/button";
 import { Calendar, Users, FolderOpen, Activity } from "lucide-react";
 import { formatDistanceToNow, format, isAfter } from "date-fns";
+import { EventList } from "../EventManager/EventList";
 
 export const Dashboard: React.FC = () => {
   const dispatch = useAppDispatch();
