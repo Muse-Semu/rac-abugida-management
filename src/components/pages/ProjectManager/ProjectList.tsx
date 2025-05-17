@@ -30,7 +30,8 @@ export const ProjectList: React.FC = () => {
   const { toast } = useToast();
   const [isCreating, setIsCreating] = useState(false);
   const [isEditing, setIsEditing] = useState<number | null>(null);
-  const [users, setUsers] = useState<any[]>([]);
+  const { users } = useAppSelector((state) => state.users);
+
   const [selectedCollaborators, setSelectedCollaborators] = useState<string[]>([]);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [primaryImageIndex, setPrimaryImageIndex] = useState<number>(0);
@@ -85,14 +86,10 @@ export const ProjectList: React.FC = () => {
     };
 
     dispatch(fetchProjects());
-    fetchUsers();
     fetchProjectsAndImages();
   }, [dispatch]);
 
-  const fetchUsers = async () => {
-    const { data } = await supabase.from('users').select('*');
-    if (data) setUsers(data);
-  };
+ 
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {

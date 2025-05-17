@@ -61,6 +61,8 @@ export const fetchEvents = createAsyncThunk(
         images: imagesByEvent[event.id] || []
       }));
 
+      console.log('Events with images:', eventsWithImages); // Debug log
+
       return eventsWithImages;
     } catch (error: any) {
       throw new Error(error.message);

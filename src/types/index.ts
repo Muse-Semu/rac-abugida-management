@@ -33,9 +33,10 @@ export interface Event {
   owner_id: string;
   created_at: string;
   updated_at: string;
-  primary_image?: string;
-  images?: string[];
-  collaborators?: string[];
+  images: Array<{
+    url: string;
+    is_primary: boolean;
+  }>;
 }
 
 export interface Project {
