@@ -199,11 +199,24 @@ export const ProjectList: React.FC = () => {
             }
           })
         );
-      }
 
-      // Add collaborators
-      for (const userId of selectedCollaborators) {
-        await dispatch(addCollaborator({ projectId: projectId || 0, userId }));
+        // Add collaborators to project_collaborators table
+        await Promise.all(
+          selectedCollaborators.map(async (userId) => {
+            const { error } = await supabase
+              .from('project_collaborators')
+              .insert({
+                project_id: projectId,
+                user_id: userId,
+                role: 'member' // Default role
+              });
+            
+            if (error) {
+              console.error('Error adding collaborator:', error);
+              throw error;
+            }
+          })
+        );
       }
 
       toast({
@@ -262,13 +275,24 @@ export const ProjectList: React.FC = () => {
     setFormData(formattedProject);
     
     // Fetch project images
-    const { data: images, error } = await supabase
+    const { data: images, error: imagesError } = await supabase
       .from('project_images')
       .select('*')
       .eq('project_id', project.id);
 
-    if (error) {
-      console.error('Error fetching project images:', error);
+    if (imagesError) {
+      console.error('Error fetching project images:', imagesError);
+      return;
+    }
+
+    // Fetch project collaborators
+    const { data: collaborators, error: collaboratorsError } = await supabase
+      .from('project_collaborators')
+      .select('user_id')
+      .eq('project_id', project.id);
+
+    if (collaboratorsError) {
+      console.error('Error fetching project collaborators:', collaboratorsError);
       return;
     }
 
@@ -284,6 +308,9 @@ export const ProjectList: React.FC = () => {
     setSelectedImages(imageFiles);
     const primaryIndex = images.findIndex(img => img.is_primary);
     setPrimaryImageIndex(primaryIndex >= 0 ? primaryIndex : 0);
+    
+    // Set selected collaborators
+    setSelectedCollaborators(collaborators.map(c => c.user_id));
   };
 
   if (loading) {
