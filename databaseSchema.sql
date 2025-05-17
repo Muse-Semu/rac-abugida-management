@@ -13,7 +13,8 @@ CREATE TABLE profiles (
     address TEXT, -- Physical address
     social_links JSONB, -- JSON object for social media links
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT FALSE
 );
 
 -- Roles table to define available roles
@@ -82,7 +83,7 @@ CREATE TABLE projects (
     project_manager_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     owner_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 );
 
 -- Project images table for storing multiple images per project
