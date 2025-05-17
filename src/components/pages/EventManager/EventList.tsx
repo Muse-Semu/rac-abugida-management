@@ -156,25 +156,50 @@ export const EventList: React.FC = () => {
         })
       );
 
+      // Prepare event data without images
       const eventData = {
-        ...formattedData,
-        owner_id: (await supabase.auth.getUser()).data.user?.id,
+        title: formattedData.title || '',
+        description: formattedData.description || '',
+        start_time: formattedData.start_time,
+        end_time: formattedData.end_time,
+        location: formattedData.location || '',
+        status: formattedData.status || 'Scheduled',
+        event_type: formattedData.event_type || 'Public',
+        tags: formattedData.tags || [],
+        max_attendees: formattedData.max_attendees || null,
+        is_recurring: formattedData.is_recurring || false,
+        owner_id: (await supabase.auth.getUser()).data.user?.id || '',
       };
 
       let eventId: number;
 
       if (isEditing) {
-        // First update the event
-        const { error: updateError } = await supabase
-          .from('events')
-          .update(eventData)
-          .eq('id', isEditing);
+        // Update event using the Redux action
+        const resultAction = await dispatch(updateEvent({
+          eventId: isEditing,
+          eventData: eventData
+        }));
 
-        if (updateError) throw updateError;
+        if (updateEvent.rejected.match(resultAction)) {
+          throw new Error(resultAction.error.message);
+        }
+
         eventId = isEditing;
+      } else {
+        // Create event using the Redux action
+        const resultAction = await dispatch(createEvent(eventData));
 
-        // Delete existing images if any new images are being uploaded
-        if (selectedImages.length > 0) {
+        if (createEvent.rejected.match(resultAction)) {
+          throw new Error(resultAction.error.message);
+        }
+
+        eventId = resultAction.payload.id;
+      }
+
+      // Handle images separately
+      if (selectedImages.length > 0) {
+        // Delete existing images if updating
+        if (isEditing) {
           const { error: deleteError } = await supabase
             .from('event_images')
             .delete()
@@ -183,61 +208,43 @@ export const EventList: React.FC = () => {
           if (deleteError) throw deleteError;
         }
 
-        // Delete existing collaborators
-        const { error: deleteCollabError } = await supabase
-          .from('event_collaborators')
-          .delete()
-          .eq('event_id', eventId);
+        // Insert new images
+        const { error: insertError } = await supabase
+          .from('event_images')
+          .insert(
+            imageUrls.map((url, index) => ({
+              event_id: eventId,
+              image_url: url,
+              is_primary: index === primaryImageIndex
+            }))
+          );
 
-        if (deleteCollabError) throw deleteCollabError;
-      } else {
-        const { data, error: createError } = await supabase
-          .from('events')
-          .insert(eventData)
-          .select()
-          .single();
-
-        if (createError) throw createError;
-        eventId = data.id;
+        if (insertError) throw insertError;
       }
 
-      // Save images to event_images table
-      if (eventId && selectedImages.length > 0) {
-        await Promise.all(
-          imageUrls.map(async (url, index) => {
-            const { error } = await supabase
-              .from('event_images')
-              .insert({
-                event_id: eventId,
-                image_url: url,
-                is_primary: index === primaryImageIndex
-              });
-            
-            if (error) {
-              console.error('Error saving image:', error);
-              throw error;
-            }
-          })
-        );
-      }
-
-      // Add collaborators
+      // Handle collaborators
       if (selectedCollaborators.length > 0) {
-        await Promise.all(
-          selectedCollaborators.map(async (userId) => {
-            const { error } = await supabase
-              .from('event_collaborators')
-              .insert({
-                event_id: eventId,
-                user_id: userId
-              });
-            
-            if (error) {
-              console.error('Error adding collaborator:', error);
-              throw error;
-            }
-          })
-        );
+        // Delete existing collaborators if updating
+        if (isEditing) {
+          const { error: deleteError } = await supabase
+            .from('event_collaborators')
+            .delete()
+            .eq('event_id', eventId);
+
+          if (deleteError) throw deleteError;
+        }
+
+        // Insert new collaborators
+        const { error: insertError } = await supabase
+          .from('event_collaborators')
+          .insert(
+            selectedCollaborators.map(userId => ({
+              event_id: eventId,
+              user_id: userId
+            }))
+          );
+
+        if (insertError) throw insertError;
       }
 
       toast({

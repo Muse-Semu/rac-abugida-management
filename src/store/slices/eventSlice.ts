@@ -28,30 +28,40 @@ export const fetchEvents = createAsyncThunk(
   'events/fetchEvents',
   async () => {
     try {
-      // Fetch events with their images using a join
+      // First fetch all events
       const { data: events, error: eventsError } = await supabase
         .from('events')
-        .select(`
-          *,
-          event_images (
-            image_url,
-            is_primary
-          )
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (eventsError) throw eventsError;
 
-      // Transform the data to match the expected format
-      const transformedEvents = events.map(event => ({
-        ...event,
-        images: (event.event_images as EventImageRecord[] || []).map(img => ({
+      // Then fetch all event images
+      const { data: images, error: imagesError } = await supabase
+        .from('event_images')
+        .select('*');
+
+      if (imagesError) throw imagesError;
+
+      // Group images by event_id
+      const imagesByEvent = images.reduce((acc, img) => {
+        if (!acc[img.event_id]) {
+          acc[img.event_id] = [];
+        }
+        acc[img.event_id].push({
           url: img.image_url,
           is_primary: img.is_primary
-        }))
+        });
+        return acc;
+      }, {} as Record<number, EventImage[]>);
+
+      // Combine events with their images
+      const eventsWithImages = events.map(event => ({
+        ...event,
+        images: imagesByEvent[event.id] || []
       }));
 
-      return transformedEvents;
+      return eventsWithImages;
     } catch (error: any) {
       throw new Error(error.message);
     }
@@ -62,7 +72,7 @@ export const createEvent = createAsyncThunk(
   'events/createEvent',
   async (eventData: Omit<Event, 'id' | 'created_at' | 'updated_at' | 'attendees_count'>) => {
     try {
-      // Extract images from eventData
+      // Remove images from eventData since it's not a column in events table
       const { images, ...eventFields } = eventData as any;
 
       // Create event
@@ -74,7 +84,7 @@ export const createEvent = createAsyncThunk(
 
       if (eventError) throw eventError;
 
-      // Handle images if they exist
+      // Handle images separately in event_images table
       if (images && images.length > 0) {
         const { error: imagesError } = await supabase
           .from('event_images')
@@ -89,24 +99,27 @@ export const createEvent = createAsyncThunk(
         if (imagesError) throw imagesError;
       }
 
-      // Fetch the complete event with images
+      // Fetch the complete event
       const { data: completeEvent, error: fetchError } = await supabase
         .from('events')
-        .select(`
-          *,
-          event_images (
-            image_url,
-            is_primary
-          )
-        `)
+        .select('*')
         .eq('id', event.id)
         .single();
 
       if (fetchError) throw fetchError;
 
+      // Fetch images for this event
+      const { data: eventImages, error: imagesError } = await supabase
+        .from('event_images')
+        .select('*')
+        .eq('event_id', event.id);
+
+      if (imagesError) throw imagesError;
+
+      // Return combined event data with images
       return {
         ...completeEvent,
-        images: (completeEvent.event_images as EventImageRecord[] || []).map(img => ({
+        images: eventImages.map(img => ({
           url: img.image_url,
           is_primary: img.is_primary
         }))
@@ -121,7 +134,7 @@ export const updateEvent = createAsyncThunk(
   'events/updateEvent',
   async ({ eventId, eventData }: { eventId: number; eventData: Partial<Event> }) => {
     try {
-      // Extract images from eventData
+      // Remove images from eventData since it's not a column in events table
       const { images, ...eventFields } = eventData as any;
 
       // Update event
@@ -134,7 +147,7 @@ export const updateEvent = createAsyncThunk(
 
       if (eventError) throw eventError;
 
-      // Handle images if they exist
+      // Handle images separately in event_images table
       if (images) {
         // Delete existing images
         const { error: deleteError } = await supabase
@@ -160,24 +173,27 @@ export const updateEvent = createAsyncThunk(
         }
       }
 
-      // Fetch the complete event with images
+      // Fetch the complete event
       const { data: completeEvent, error: fetchError } = await supabase
         .from('events')
-        .select(`
-          *,
-          event_images (
-            image_url,
-            is_primary
-          )
-        `)
+        .select('*')
         .eq('id', eventId)
         .single();
 
       if (fetchError) throw fetchError;
 
+      // Fetch images for this event
+      const { data: eventImages, error: imagesError } = await supabase
+        .from('event_images')
+        .select('*')
+        .eq('event_id', eventId);
+
+      if (imagesError) throw imagesError;
+
+      // Return combined event data with images
       return {
         ...completeEvent,
-        images: (completeEvent.event_images as EventImageRecord[] || []).map(img => ({
+        images: eventImages.map(img => ({
           url: img.image_url,
           is_primary: img.is_primary
         }))
