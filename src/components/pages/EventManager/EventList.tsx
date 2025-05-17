@@ -28,14 +28,13 @@ import { useToast } from '../../../hooks/use-toast';
 export const EventList: React.FC = () => {
   const dispatch = useAppDispatch();
   const { events, loading, error } = useAppSelector((state) => state.events);
+  const { users } = useAppSelector((state) => state.users);
   const { toast } = useToast();
   const [isCreating, setIsCreating] = useState(false);
   const [isEditing, setIsEditing] = useState<number | null>(null);
-  const [users, setUsers] = useState<any[]>([]);
   const [selectedCollaborators, setSelectedCollaborators] = useState<string[]>([]);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [primaryImageIndex, setPrimaryImageIndex] = useState<number>(0);
-  const [eventImages, setEventImages] = useState<Record<number, { url: string; is_primary: boolean }[]>>({});
   const [formData, setFormData] = useState<Partial<Event>>({
     title: '',
     description: '',
@@ -48,49 +47,6 @@ export const EventList: React.FC = () => {
     max_attendees: null,
     is_recurring: false,
   });
-
-  useEffect(() => {
-    const fetchEventsAndImages = async () => {
-      try {
-        // Fetch images for all events
-        const { data: imagesData, error: imagesError } = await supabase
-          .from('event_images')
-          .select('*');
-
-        if (imagesError) throw imagesError;
-
-        // Group images by event_id
-        const imagesByEvent = imagesData.reduce((acc, img) => {
-          if (!acc[img.event_id]) {
-            acc[img.event_id] = [];
-          }
-          acc[img.event_id].push({
-            url: img.image_url,
-            is_primary: img.is_primary
-          });
-          return acc;
-        }, {} as Record<number, { url: string; is_primary: boolean }[]>);
-
-        setEventImages(imagesByEvent);
-      } catch (error) {
-        console.error('Error fetching event images:', error);
-        toast({
-          title: "Error",
-          description: "Failed to load event images.",
-          variant: "destructive",
-        });
-      }
-    };
-
-    dispatch(fetchEvents());
-    fetchUsers();
-    fetchEventsAndImages();
-  }, [dispatch]);
-
-  const fetchUsers = async () => {
-    const { data } = await supabase.from('users').select('*');
-    if (data) setUsers(data);
-  };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -156,18 +112,13 @@ export const EventList: React.FC = () => {
         })
       );
 
-      // Prepare event data without images
+      // Prepare event data with images
       const eventData = {
-        title: formattedData.title || '',
-        description: formattedData.description || '',
-        start_time: formattedData.start_time,
-        end_time: formattedData.end_time,
-        location: formattedData.location || '',
-        status: formattedData.status || 'Scheduled',
-        event_type: formattedData.event_type || 'Public',
-        tags: formattedData.tags || [],
-        max_attendees: formattedData.max_attendees || null,
-        is_recurring: formattedData.is_recurring || false,
+        ...formattedData,
+        images: imageUrls.map((url, index) => ({
+          url,
+          is_primary: index === primaryImageIndex
+        })),
         owner_id: (await supabase.auth.getUser()).data.user?.id || '',
       };
 
@@ -194,32 +145,6 @@ export const EventList: React.FC = () => {
         }
 
         eventId = resultAction.payload.id;
-      }
-
-      // Handle images separately
-      if (selectedImages.length > 0) {
-        // Delete existing images if updating
-        if (isEditing) {
-          const { error: deleteError } = await supabase
-            .from('event_images')
-            .delete()
-            .eq('event_id', eventId);
-
-          if (deleteError) throw deleteError;
-        }
-
-        // Insert new images
-        const { error: insertError } = await supabase
-          .from('event_images')
-          .insert(
-            imageUrls.map((url, index) => ({
-              event_id: eventId,
-              image_url: url,
-              is_primary: index === primaryImageIndex
-            }))
-          );
-
-        if (insertError) throw insertError;
       }
 
       // Handle collaborators
@@ -294,43 +219,21 @@ export const EventList: React.FC = () => {
     
     setFormData(formattedEvent);
     
-    // Fetch event images
-    const { data: images, error: imagesError } = await supabase
-      .from('event_images')
-      .select('*')
-      .eq('event_id', event.id);
-
-    if (imagesError) {
-      console.error('Error fetching event images:', imagesError);
-      return;
-    }
-
-    // Fetch event collaborators
-    const { data: collaborators, error: collaboratorsError } = await supabase
-      .from('event_collaborators')
-      .select('user_id')
-      .eq('event_id', event.id);
-
-    if (collaboratorsError) {
-      console.error('Error fetching event collaborators:', collaboratorsError);
-      return;
-    }
-
     // Set selected images and primary image index
     const imageFiles = await Promise.all(
-      images.map(async (img) => {
-        const response = await fetch(img.image_url);
+      event.images.map(async (img) => {
+        const response = await fetch(img.url);
         const blob = await response.blob();
-        return new File([blob], img.image_url.split('/').pop() || 'image.jpg', { type: blob.type });
+        return new File([blob], img.url.split('/').pop() || 'image.jpg', { type: blob.type });
       })
     );
 
     setSelectedImages(imageFiles);
-    const primaryIndex = images.findIndex(img => img.is_primary);
+    const primaryIndex = event.images.findIndex(img => img.is_primary);
     setPrimaryImageIndex(primaryIndex >= 0 ? primaryIndex : 0);
     
     // Set selected collaborators
-    setSelectedCollaborators(collaborators.map(c => c.user_id));
+    setSelectedCollaborators(event.collaborators || []);
   };
 
   if (loading) {
@@ -588,8 +491,8 @@ export const EventList: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {events.map((event) => {
-          const eventImgs = eventImages[event.id] || [];
-          const primaryImage = eventImgs.find(img => img.is_primary)?.url;
+          const images = event.images || [];
+          const primaryImage = images.find(img => img.is_primary)?.url;
           
           return (
             <div
@@ -693,9 +596,9 @@ export const EventList: React.FC = () => {
                 )}
 
                 {/* Additional Images */}
-                {eventImgs.length > 1 && (
+                {images.length > 1 && (
                   <div className="grid grid-cols-4 gap-2">
-                    {eventImgs.slice(0, 4).map((img, index) => (
+                    {images.slice(0, 4).map((img, index) => (
                       <div key={index} className="relative aspect-square">
                         <img
                           src={img.url}
@@ -711,9 +614,9 @@ export const EventList: React.FC = () => {
                         )}
                       </div>
                     ))}
-                    {eventImgs.length > 4 && (
+                    {images.length > 4 && (
                       <div className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center">
-                        <span className="text-gray-500 text-sm">+{eventImgs.length - 4}</span>
+                        <span className="text-gray-500 text-sm">+{images.length - 4}</span>
                       </div>
                     )}
                   </div>

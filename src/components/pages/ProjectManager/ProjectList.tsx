@@ -565,7 +565,7 @@ export const ProjectList: React.FC = () => {
                       ))}
                     </SelectContent>
                   </Select>
-                  <div className="flex flex-wrap gap-2 mt-2">
+                  <div className="flex flex-wrap gap-2 mt-2 ">
                     {selectedCollaborators.map((userId) => {
                       const user = users.find(u => u.id === userId);
                       return user ? (
