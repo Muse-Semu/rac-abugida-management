@@ -115,7 +115,14 @@ export const EventList: React.FC = () => {
           const { data, error } = await supabase.storage
             .from('event-images')
             .upload(fileName, image);
-          if (error) throw error;
+          if (error) {
+            toast({
+              title: "Error",
+              description: `Failed to upload image: ${error.message}`,
+              variant: "destructive",
+            });
+            throw error;
+          }
           return data.path;
         })
       );

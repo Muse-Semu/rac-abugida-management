@@ -92,6 +92,7 @@ export const createProject = createAsyncThunk(
         throw new Error('You do not have permission to create projects');
       }
 
+      console.log("Project data is ",projectData)
       // Create project
       const { data: project, error } = await supabase
         .from('projects')

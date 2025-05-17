@@ -86,16 +86,61 @@ export const ProjectList: React.FC = () => {
         end_date: new Date(formData.end_date!).toISOString(),
       };
 
+      // First ensure the bucket exists
+      const { data: buckets } = await supabase.storage.listBuckets();
+      const projectImagesBucket = buckets?.find(b => b.name === 'project-images');
+      
+      if (!projectImagesBucket) {
+        const { error: createBucketError } = await supabase.storage.createBucket('project-images', {
+          public: true,
+          allowedMimeTypes: ['image/png', 'image/jpeg', 'image/gif'],
+          fileSizeLimit: 5242880 // 5MB
+        });
+        
+        if (createBucketError) {
+          console.error('Error creating bucket:', createBucketError);
+          toast({
+            title: "Error",
+            description: "Failed to create storage bucket. Please contact support.",
+            variant: "destructive",
+          });
+          throw createBucketError;
+        }
+      }
+
       // Upload images first
       const imageUrls = await Promise.all(
         selectedImages.map(async (image) => {
-          const fileExt = image.name.split('.').pop();
-          const fileName = `${Math.random()}.${fileExt}`;
-          const { data, error } = await supabase.storage
-            .from('project-images')
-            .upload(fileName, image);
-          if (error) throw error;
-          return data.path;
+          try {
+            const fileExt = image.name.split('.').pop();
+            const fileName = `${Math.random()}.${fileExt}`;
+            const { data, error } = await supabase.storage
+              .from('project-images')
+              .upload(fileName, image, {
+                cacheControl: '3600',
+                upsert: false
+              });
+
+            if (error) {
+              console.error('Image upload error:', error);
+              toast({
+                title: "Error",
+                description: `Failed to upload image: ${error.message}`,
+                variant: "destructive",
+              });
+              throw error;
+            }
+
+            // Get the public URL
+            const { data: { publicUrl } } = supabase.storage
+              .from('project-images')
+              .getPublicUrl(data.path);
+
+            return publicUrl;
+          } catch (error: any) {
+            console.error('Error in image upload:', error);
+            throw error;
+          }
         })
       );
 
@@ -106,10 +151,15 @@ export const ProjectList: React.FC = () => {
         owner_id: (await supabase.auth.getUser()).data.user?.id,
       };
 
+      console.log('Project Data being sent:', projectData);
+      console.log('Current user:', (await supabase.auth.getUser()).data.user);
+
       if (isEditing) {
-        await dispatch(updateProject({ projectId: isEditing, projectData }));
+        const result = await dispatch(updateProject({ projectId: isEditing, projectData }));
+        console.log('Update result:', result);
       } else {
-        await dispatch(createProject(projectData as Omit<Project, 'id' | 'created_at' | 'updated_at' | 'team_members_count'>));
+        const result = await dispatch(createProject(projectData as Omit<Project, 'id' | 'created_at' | 'updated_at' | 'team_members_count'>));
+        console.log('Create result:', result);
       }
 
       // Add collaborators
@@ -144,6 +194,14 @@ export const ProjectList: React.FC = () => {
       });
     } catch (error: any) {
       console.error('Error saving project:', error);
+      console.error('Error details:', {
+        message: error.message,
+        statusCode: error.statusCode,
+        error: error.error,
+        details: error.details,
+        hint: error.hint
+      });
+      
       toast({
         title: "Error",
         description: error.message || "Failed to save project. Please check your permissions and try again.",
