@@ -18,14 +18,24 @@ export interface UserRole {
 }
 
 export interface Event {
-  id: string;
+  id: number;
   title: string;
   description: string;
   start_time: string;
   end_time: string;
-  organizer_id: string;
+  location: string;
+  status: 'Scheduled' | 'Ongoing' | 'Completed' | 'Cancelled';
+  event_type: 'Public' | 'Private' | 'Internal';
+  tags: string[];
+  attendees_count: number;
+  max_attendees: number | null;
+  is_recurring: boolean;
+  owner_id: string;
   created_at: string;
   updated_at: string;
+  primary_image?: string;
+  images?: string[];
+  collaborators?: string[];
 }
 
 export interface Project {
