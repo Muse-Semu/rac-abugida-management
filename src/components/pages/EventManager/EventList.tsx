@@ -607,7 +607,7 @@ export const EventList: React.FC = () => {
 
                 {/* Recurring Badge */}
                 {event.is_recurring && (
-                  <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                  <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 mb-4">
                     <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
@@ -615,30 +615,29 @@ export const EventList: React.FC = () => {
                   </div>
                 )}
 
-                {/* Additional Images */}
-                {images.length > 1 && (
-                  <div className="grid grid-cols-4 gap-2 p-4">
-                    {images.slice(0, 4).map((img, index) => (
-                      <div key={index} className="relative aspect-square">
-                        <img
-                          src={img.url}
-                          alt={`${event.title} image ${index + 1}`}
-                          className={`w-full h-full object-cover rounded-lg ${
-                            img.is_primary ? 'ring-2 ring-indigo-500' : ''
-                          }`}
-                        />
-                        {img.is_primary && (
-                          <div className="absolute bottom-1 left-1 bg-indigo-500 text-white text-xs px-1 rounded">
-                            Primary
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    {images.length > 4 && (
-                      <div className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center">
-                        <span className="text-gray-500 text-sm">+{images.length - 4}</span>
-                      </div>
-                    )}
+                {/* Event Images Grid */}
+                {images.length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Event Images</h4>
+                    <div className="grid grid-cols-4 gap-2">
+                      {images.map((img, index) => (
+                        <div key={index} className="relative aspect-square group">
+                          <img
+                            src={img.url}
+                            alt={`${event.title} image ${index + 1}`}
+                            className={`w-full h-full object-cover rounded-lg ${
+                              img.is_primary ? 'ring-2 ring-indigo-500' : ''
+                            }`}
+                          />
+                          {img.is_primary && (
+                            <div className="absolute bottom-1 left-1 bg-indigo-500 text-white text-xs px-1 rounded">
+                              Primary
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity rounded-lg" />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
