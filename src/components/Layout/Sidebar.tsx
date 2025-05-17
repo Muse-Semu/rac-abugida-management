@@ -48,8 +48,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   return (
-    <div className="h-screen flex">
-      <div className="group flex flex-col h-full bg-gray-800 text-white transition-all duration-300 w-16 hover:w-64 shadow-lg">
+    <div className="h-screen flex inset-0  bg-opacity-50 fixed w-16 hover:w-64  z-10 ">
+      <div className="group flex flex-col h-full bg-gray-800  text-white transition-all duration-300 w-16 hover:w-64  shadow-lg">
         {/* Logo */}
         <div className="flex items-center h-16 px-4 bg-gray-900">
           <h1 className="text-xl font-bold truncate opacity-0 group-hover:opacity-100 transition-opacity duration-300">

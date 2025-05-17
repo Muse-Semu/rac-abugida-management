@@ -8,8 +8,10 @@
   font-weight: 400;
 
   color-scheme: light dark;
-  color: black;
-  background-color: white;
+  /* color: #D91A5F; */
+  /* background-color: #e4d4b3; */
+  background-color:white;
+  color:black;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -47,6 +49,12 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --primary-bg: #e4d4b3;
+  /* --accent: #D91A5F; */
+
+  
+
+   
 }
 
 
