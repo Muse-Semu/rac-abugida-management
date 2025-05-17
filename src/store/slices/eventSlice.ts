@@ -17,6 +17,9 @@ interface Event {
   owner_id: string;
   created_at: string;
   updated_at: string;
+  primary_image?: string;
+  images?: string[];
+  collaborators?: string[];
 }
 
 interface EventState {
