@@ -21,9 +21,19 @@ interface Role {
   description: string;
 }
 
+interface Profile {
+  user_id: string;
+  full_name: string;
+  email: string;
+  designation: string;
+  is_active: boolean;
+  created_at: string;
+}
+
 interface UserState {
   users: User[];
   roles: Role[];
+  profiles: Profile[];
   loading: boolean;
   error: string | null;
 }
@@ -31,6 +41,7 @@ interface UserState {
 const initialState: UserState = {
   users: [],
   roles: [],
+  profiles: [],
   loading: false,
   error: null,
 };
@@ -80,7 +91,7 @@ export const fetchUsers = createAsyncThunk(
         };
       });
 
-      return formattedUsers;
+      return { users: formattedUsers, profiles };
     } catch (error) {
       return rejectWithValue((error as Error).message);
     }
@@ -346,6 +357,9 @@ const userSlice = createSlice({
     setRoles: (state, action: PayloadAction<Role[]>) => {
       state.roles = action.payload;
     },
+    setProfiles: (state, action: PayloadAction<Profile[]>) => {
+      state.profiles = action.payload;
+    },
     setLoading: (state, action: PayloadAction<boolean>) => {
       state.loading = action.payload;
     },
@@ -362,7 +376,8 @@ const userSlice = createSlice({
       })
       .addCase(fetchUsers.fulfilled, (state, action) => {
         state.loading = false;
-        state.users = action.payload;
+        state.users = action.payload.users;
+        state.profiles = action.payload.profiles;
       })
       .addCase(fetchUsers.rejected, (state, action) => {
         state.loading = false;
@@ -445,6 +460,7 @@ const userSlice = createSlice({
 export const {
   setUsers,
   setRoles,
+  setProfiles,
   setLoading,
   setError,
 } = userSlice.actions;

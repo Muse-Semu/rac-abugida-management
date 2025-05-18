@@ -28,12 +28,25 @@ import { useToast } from '../../../hooks/use-toast';
 interface User {
   id: string;
   email: string;
+  role?: {
+    id: number;
+    role_name: string;
+  };
+}
+
+interface Profile {
+  user_id: string;
+  full_name: string;
+  email: string;
+  designation: string;
+  is_active: boolean;
+  created_at: string;
 }
 
 export const EventList: React.FC = () => {
   const dispatch = useAppDispatch();
   const { events, loading, error } = useAppSelector((state) => state.events);
-  const { users } = useAppSelector((state) => state.users);
+  const { users, profiles } = useAppSelector((state) => state.users);
   const { toast } = useToast();
   const [isCreating, setIsCreating] = useState(false);
   const [isEditing, setIsEditing] = useState<number | null>(null);
@@ -53,6 +66,18 @@ export const EventList: React.FC = () => {
     is_recurring: false,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string>('');
+
+  useEffect(() => {
+    // Get current user ID
+    const getCurrentUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setCurrentUserId(user.id);
+      }
+    };
+    getCurrentUser();
+  }, []);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -105,12 +130,13 @@ export const EventList: React.FC = () => {
         end_time: new Date(formData.end_time).toISOString(),
       };
 
-      const eventData: Omit<Event, 'id' | 'attendees_count' | 'created_at' | 'updated_at'> = {
-        title: formattedData.title,
-        description: formattedData.description,
+      // Create event data with proper types
+      const eventData = {
+        title: formattedData.title as string,
+        description: formattedData.description as string,
         start_time: formattedData.start_time,
         end_time: formattedData.end_time,
-        location: formattedData.location,
+        location: formattedData.location as string,
         status: formattedData.status || 'Scheduled',
         event_type: formattedData.event_type || 'Public',
         tags: formattedData.tags || [],
@@ -121,8 +147,8 @@ export const EventList: React.FC = () => {
           is_primary: index === primaryImageIndex
         })),
         owner_id: (await supabase.auth.getUser()).data.user?.id || '',
-        collaborators: selectedCollaborators.map(c => c.id)
-      };
+        collaborators: selectedCollaborators
+      } as Omit<Event, 'id' | 'attendees_count' | 'created_at' | 'updated_at'>;
 
       if (isEditing) {
         await dispatch(updateEvent({ eventId: isEditing, eventData }));
@@ -358,11 +384,12 @@ export const EventList: React.FC = () => {
                   <Select
                     onValueChange={(value) => {
                       const user = users.find(u => u.id === value);
-                      if (user) {
+                      const profile = profiles.find(p => p.user_id === value);
+                      if (user && !selectedCollaborators.some(c => c.id === user.id)) {
                         setSelectedCollaborators([...selectedCollaborators, {
                           id: user.id,
                           email: user.email || '',
-                          full_name: user.email ? user.email.split('@')[0] : 'User'
+                          full_name: profile?.full_name || user.email.split('@')[0]
                         }]);
                       }
                     }}
@@ -371,17 +398,25 @@ export const EventList: React.FC = () => {
                       <SelectValue placeholder="Select collaborators" />
                     </SelectTrigger>
                     <SelectContent>
-                      {users.map((user) => (
-                        <SelectItem key={user.id} value={user.id}>
-                          {user.email || 'User'}
-                        </SelectItem>
-                      ))}
+                      {users
+                        .filter(user => {
+                          const profile = profiles.find(p => p.user_id === user.id);
+                          return user.id !== currentUserId && profile?.is_active;
+                        })
+                        .map((user) => {
+                          const profile = profiles.find(p => p.user_id === user.id);
+                          return (
+                            <SelectItem key={`select-${user.id}`} value={user.id}>
+                              {profile?.full_name || user.email.split('@')[0]} - {user.role?.role_name || 'Member'}
+                            </SelectItem>
+                          );
+                        })}
                     </SelectContent>
                   </Select>
                   <div className="flex flex-wrap gap-2 mt-2">
                     {selectedCollaborators.map((collaborator) => (
-                      <div key={collaborator.id} className="flex items-center gap-2 bg-gray-100 px-2 py-1 rounded">
-                        <span>{collaborator.full_name || collaborator.email || 'User'}</span>
+                      <div key={`selected-${collaborator.id}`} className="flex items-center gap-2 bg-gray-100 px-2 py-1 rounded">
+                        <span>{collaborator.full_name}</span>
                         <button
                           type="button"
                           onClick={() => setSelectedCollaborators(selectedCollaborators.filter(c => c.id !== collaborator.id))}
