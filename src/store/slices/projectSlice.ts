@@ -679,6 +679,75 @@ export const removeCollaborator = createAsyncThunk(
   }
 );
 
+export const deleteProject = createAsyncThunk(
+  "projects/deleteProject",
+  async (projectId: number, { rejectWithValue }) => {
+    try {
+      // Check permissions
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      const { data: project, error: projectError } = await supabase
+        .from("projects")
+        .select("owner_id, project_manager_id")
+        .eq("id", projectId)
+        .single();
+
+      if (projectError) throw projectError;
+
+      const { data: userRoles, error: rolesError } = await supabase
+        .from("user_roles")
+        .select("roles(role_name)")
+        .eq("user_id", user.id);
+
+      if (rolesError) throw rolesError;
+
+      const isAdmin = userRoles?.some(
+        (ur: any) => ur.roles.role_name === "Admin"
+      );
+      const isManager = userRoles?.some(
+        (ur: any) => ur.roles.role_name === "Project Manager"
+      );
+      const isOwner = project.owner_id === user.id;
+      const isProjectManager = project.project_manager_id === user.id;
+
+      if (!isAdmin && !isManager && !isOwner && !isProjectManager) {
+        throw new Error("You do not have permission to delete this project");
+      }
+
+      // Delete project images
+      const { error: imagesError } = await supabase
+        .from("project_images")
+        .delete()
+        .eq("project_id", projectId);
+
+      if (imagesError) throw imagesError;
+
+      // Delete project collaborators
+      const { error: collaboratorsError } = await supabase
+        .from("project_collaborators")
+        .delete()
+        .eq("project_id", projectId);
+
+      if (collaboratorsError) throw collaboratorsError;
+
+      // Delete project
+      const { error: deleteError } = await supabase
+        .from("projects")
+        .delete()
+        .eq("id", projectId);
+
+      if (deleteError) throw deleteError;
+
+      return projectId;
+    } catch (error: any) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
 const projectSlice = createSlice({
   name: "projects",
   initialState,
@@ -744,6 +813,20 @@ const projectSlice = createSlice({
             0
           );
         }
+      })
+      .addCase(deleteProject.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(deleteProject.fulfilled, (state, action) => {
+        state.loading = false;
+        state.projects = state.projects.filter(
+          (project) => project.id !== action.payload
+        );
+      })
+      .addCase(deleteProject.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload as string;
       });
   },
 });
