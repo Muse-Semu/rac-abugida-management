@@ -772,7 +772,6 @@ export const EventList: React.FC = () => {
                   </div>
                 )}
                 {/* Additional Images */}
-                /cuda/scratch/user/abhuiyam/rac-abugida-managment/src/components/pages/EventManager/EventList.tsx
                 {images.length > 1 && (
                   <div className="grid grid-cols-4 gap-2">
                     {images.slice(0, 4).map((img, index) => (
