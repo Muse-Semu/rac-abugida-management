@@ -25,6 +25,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from '../../../components/ui/checkbox';
 import { useToast } from '../../../hooks/use-toast';
 
+interface User {
+  id: string;
+  email: string;
+}
+
 export const EventList: React.FC = () => {
   const dispatch = useAppDispatch();
   const { events, loading, error } = useAppSelector((state) => state.events);
@@ -32,7 +37,7 @@ export const EventList: React.FC = () => {
   const { toast } = useToast();
   const [isCreating, setIsCreating] = useState(false);
   const [isEditing, setIsEditing] = useState<number | null>(null);
-  const [selectedCollaborators, setSelectedCollaborators] = useState<string[]>([]);
+  const [selectedCollaborators, setSelectedCollaborators] = useState<Array<{ id: string; email: string; full_name: string }>>([]);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [primaryImageIndex, setPrimaryImageIndex] = useState<number>(0);
   const [formData, setFormData] = useState<Partial<Event>>({
@@ -47,6 +52,7 @@ export const EventList: React.FC = () => {
     max_attendees: null,
     is_recurring: false,
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -66,127 +72,78 @@ export const EventList: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
+
     try {
-      // Format dates to ISO string
-      const formattedData = {
-        ...formData,
-        start_time: new Date(formData.start_time!).toISOString(),
-        end_time: new Date(formData.end_time!).toISOString(),
-      };
+      // Ensure all required fields are present
+      if (!formData.title || !formData.description || !formData.start_time || !formData.end_time || !formData.location) {
+        toast({
+          title: "Error",
+          description: "Please fill in all required fields",
+          variant: "destructive",
+        });
+        return;
+      }
 
       // Upload images first
       const imageUrls = await Promise.all(
-        selectedImages.map(async (image) => {
-          try {
-            const fileExt = image.name.split('.').pop();
-            const fileName = `${Math.random()}.${fileExt}`;
-            
-            // Try to upload directly to the bucket
-            const { data, error } = await supabase.storage
-              .from('event-images')
-              .upload(fileName, image, {
-                cacheControl: '3600',
-                upsert: false
-              });
+        selectedImages.map(async (file) => {
+          const fileExt = file.name.split('.').pop();
+          const fileName = `${Math.random()}.${fileExt}`;
+          const { data, error } = await supabase.storage
+            .from('event-images')
+            .upload(fileName, file);
 
-            if (error) {
-              console.error('Image upload error:', error);
-              toast({
-                title: "Error",
-                description: `Failed to upload image: ${error.message}`,
-                variant: "destructive",
-              });
-              throw error;
-            }
-
-            // Get the public URL
-            const { data: { publicUrl } } = supabase.storage
-              .from('event-images')
-              .getPublicUrl(data.path);
-
-            return publicUrl;
-          } catch (error: any) {
-            console.error('Error in image upload:', error);
-            throw error;
-          }
+          if (error) throw error;
+          return supabase.storage.from('event-images').getPublicUrl(data.path).data.publicUrl;
         })
       );
 
-      // Prepare event data with images
-      const eventData = {
-        ...formattedData,
+      const formattedData = {
+        ...formData,
+        start_time: new Date(formData.start_time).toISOString(),
+        end_time: new Date(formData.end_time).toISOString(),
+      };
+
+      const eventData: Omit<Event, 'id' | 'attendees_count' | 'created_at' | 'updated_at'> = {
+        title: formattedData.title,
+        description: formattedData.description,
+        start_time: formattedData.start_time,
+        end_time: formattedData.end_time,
+        location: formattedData.location,
+        status: formattedData.status || 'Scheduled',
+        event_type: formattedData.event_type || 'Public',
+        tags: formattedData.tags || [],
+        max_attendees: formattedData.max_attendees || null,
+        is_recurring: formattedData.is_recurring || false,
         images: imageUrls.map((url, index) => ({
           url,
           is_primary: index === primaryImageIndex
         })),
         owner_id: (await supabase.auth.getUser()).data.user?.id || '',
+        collaborators: selectedCollaborators.map(c => c.id)
       };
 
-      let eventId: number;
-
       if (isEditing) {
-        // Update event using the Redux action
-        const resultAction = await dispatch(updateEvent({
-          eventId: isEditing,
-          eventData: eventData
-        }));
-
-        if (updateEvent.rejected.match(resultAction)) {
-          throw new Error(resultAction.error.message);
-        }
-
-        eventId = isEditing;
+        await dispatch(updateEvent({ eventId: isEditing, eventData }));
+        toast({
+          title: "Success",
+          description: "Event updated successfully",
+        });
       } else {
-        // Create event using the Redux action
-        const resultAction = await dispatch(createEvent(eventData));
-
-        if (createEvent.rejected.match(resultAction)) {
-          throw new Error(resultAction.error.message);
-        }
-
-        eventId = resultAction.payload.id;
+        await dispatch(createEvent(eventData));
+        toast({
+          title: "Success",
+          description: "Event created successfully",
+        });
       }
 
-      // Handle collaborators
-      if (selectedCollaborators.length > 0) {
-        // Delete existing collaborators if updating
-        if (isEditing) {
-          const { error: deleteError } = await supabase
-            .from('event_collaborators')
-            .delete()
-            .eq('event_id', eventId);
-
-          if (deleteError) throw deleteError;
-        }
-
-        // Insert new collaborators
-        const { error: insertError } = await supabase
-          .from('event_collaborators')
-          .insert(
-            selectedCollaborators.map(userId => ({
-              event_id: eventId,
-              user_id: userId
-            }))
-          );
-
-        if (insertError) throw insertError;
-      }
-
-      toast({
-        title: isEditing ? "Event Updated" : "Event Created",
-        description: isEditing ? "Your event has been updated successfully." : "Your event has been created successfully.",
-        variant: "default",
-      });
-
-      setIsCreating(false);
-      setIsEditing(null);
-      setSelectedImages([]);
-      setSelectedCollaborators([]);
+      // Reset form
       setFormData({
         title: '',
         description: '',
-        start_time: new Date().toISOString().slice(0, 16),
-        end_time: new Date().toISOString().slice(0, 16),
+        start_time: '',
+        end_time: '',
         location: '',
         status: 'Scheduled',
         event_type: 'Public',
@@ -194,16 +151,19 @@ export const EventList: React.FC = () => {
         max_attendees: null,
         is_recurring: false,
       });
-
-      // Refresh the events list
-      dispatch(fetchEvents());
+      setSelectedImages([]);
+      setPrimaryImageIndex(0);
+      setSelectedCollaborators([]);
+      setIsEditing(null);
+      setIsSubmitting(false);
     } catch (error: any) {
-      console.error('Error saving event:', error);
+      console.error('Error submitting event:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to save event. Please check your permissions and try again.",
+        description: error.message || "Failed to submit event",
         variant: "destructive",
       });
+      setIsSubmitting(false);
     }
   };
 
@@ -396,7 +356,16 @@ export const EventList: React.FC = () => {
                 <div className="col-span-2 space-y-2">
                   <Label>Collaborators</Label>
                   <Select
-                    onValueChange={(value) => setSelectedCollaborators([...selectedCollaborators, value])}
+                    onValueChange={(value) => {
+                      const user = users.find(u => u.id === value);
+                      if (user) {
+                        setSelectedCollaborators([...selectedCollaborators, {
+                          id: user.id,
+                          email: user.email || '',
+                          full_name: user.email ? user.email.split('@')[0] : 'User'
+                        }]);
+                      }
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select collaborators" />
@@ -404,27 +373,24 @@ export const EventList: React.FC = () => {
                     <SelectContent>
                       {users.map((user) => (
                         <SelectItem key={user.id} value={user.id}>
-                          {user.email}
+                          {user.email || 'User'}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    {selectedCollaborators.map((userId) => {
-                      const user = users.find(u => u.id === userId);
-                      return user ? (
-                        <div key={userId} className="flex items-center gap-2 bg-gray-100 px-2 py-1 rounded">
-                          <span>{user.email}</span>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedCollaborators(selectedCollaborators.filter(id => id !== userId))}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ) : null;
-                    })}
+                    {selectedCollaborators.map((collaborator) => (
+                      <div key={collaborator.id} className="flex items-center gap-2 bg-gray-100 px-2 py-1 rounded">
+                        <span>{collaborator.full_name || collaborator.email || 'User'}</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCollaborators(selectedCollaborators.filter(c => c.id !== collaborator.id))}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 </div>
                 <div className="col-span-2 space-y-2">
@@ -592,6 +558,31 @@ export const EventList: React.FC = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
                     Recurring Event
+                  </div>
+                )}
+
+                {/* Collaborators List */}
+                {event.collaborators && event.collaborators.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Collaborators</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {event.collaborators.map((collaborator) => (
+                        <div
+                          key={collaborator.id}
+                          className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-full text-sm"
+                        >
+                          <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center">
+                            <span className="text-indigo-600 text-xs font-medium">
+                              {collaborator.full_name.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-gray-900 font-medium">{collaborator.full_name}</span>
+                            <span className="text-gray-500 text-xs">{collaborator.email}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 

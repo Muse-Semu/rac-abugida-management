@@ -37,6 +37,11 @@ export interface Event {
     url: string;
     is_primary: boolean;
   }>;
+  collaborators?: Array<{
+    id: string;
+    email: string;
+    full_name: string;
+  }>;
 }
 
 export interface Project {

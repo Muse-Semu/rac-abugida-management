@@ -18,6 +18,33 @@ interface EventImageRecord {
   is_primary: boolean;
 }
 
+interface CollaboratorResponse {
+  event_id: number;
+  user_id: string;
+  users: {
+    email: string;
+    profiles: {
+      full_name: string;
+    } | null;
+  };
+}
+
+interface UserProfile {
+  user_id: string;
+  full_name: string;
+  users: {
+    email: string;
+  };
+}
+
+interface ProfileWithEmail {
+  user_id: string;
+  full_name: string;
+  email: {
+    email: string;
+  };
+}
+
 const initialState: EventState = {
   events: [],
   loading: false,
@@ -43,6 +70,35 @@ export const fetchEvents = createAsyncThunk(
 
       if (imagesError) throw imagesError;
 
+      // Fetch all event collaborators
+      const { data: collaborators, error: collaboratorsError } = await supabase
+        .from('event_collaborators')
+        .select('event_id, user_id');
+
+      if (collaboratorsError) throw collaboratorsError;
+      if (!collaborators) throw new Error('Failed to fetch collaborators');
+
+      // Fetch user details for all collaborators
+      const userIds = [...new Set(collaborators.map(c => c.user_id))];
+      
+      // Get profiles data
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('user_id, full_name')
+        .in('user_id', userIds);
+
+      if (profilesError) throw profilesError;
+      if (!profiles) throw new Error('Failed to fetch profiles');
+
+      // Create a map of user details
+      const userDetails = profiles.reduce((acc, profile) => {
+        acc[profile.user_id] = {
+          email: '', // We'll get this from the user's session when needed
+          full_name: profile.full_name
+        };
+        return acc;
+      }, {} as Record<string, { email: string; full_name: string }>);
+
       // Group images by event_id
       const imagesByEvent = images.reduce((acc, img) => {
         if (!acc[img.event_id]) {
@@ -55,13 +111,30 @@ export const fetchEvents = createAsyncThunk(
         return acc;
       }, {} as Record<number, EventImage[]>);
 
-      // Combine events with their images
+      // Group collaborators by event_id with their details
+      const collaboratorsByEvent = collaborators.reduce((acc, collab) => {
+        if (!acc[collab.event_id]) {
+          acc[collab.event_id] = [];
+        }
+        const userDetail = userDetails[collab.user_id];
+        if (userDetail) {
+          acc[collab.event_id].push({
+            id: collab.user_id,
+            email: userDetail.email,
+            full_name: userDetail.full_name
+          });
+        }
+        return acc;
+      }, {} as Record<number, Array<{ id: string; email: string; full_name: string }>>);
+
+      // Combine events with their images and collaborators
       const eventsWithImages = events.map(event => ({
         ...event,
-        images: imagesByEvent[event.id] || []
+        images: imagesByEvent[event.id] || [],
+        collaborators: collaboratorsByEvent[event.id] || []
       }));
 
-      console.log('Events with images:', eventsWithImages); // Debug log
+      console.log('Events with images and collaborators:', eventsWithImages); // Debug log
 
       return eventsWithImages;
     } catch (error: any) {
@@ -74,8 +147,8 @@ export const createEvent = createAsyncThunk(
   'events/createEvent',
   async (eventData: Omit<Event, 'id' | 'created_at' | 'updated_at' | 'attendees_count'>) => {
     try {
-      // Remove images from eventData since it's not a column in events table
-      const { images, ...eventFields } = eventData as any;
+      // Remove images and collaborators from eventData since they're in separate tables
+      const { images, collaborators, ...eventFields } = eventData as any;
 
       // Create event
       const { data: event, error: eventError } = await supabase
@@ -101,6 +174,20 @@ export const createEvent = createAsyncThunk(
         if (imagesError) throw imagesError;
       }
 
+      // Handle collaborators separately in event_collaborators table
+      if (collaborators && collaborators.length > 0) {
+        const { error: collaboratorsError } = await supabase
+          .from('event_collaborators')
+          .insert(
+            collaborators.map((userId: string) => ({
+              event_id: event.id,
+              user_id: userId
+            }))
+          );
+
+        if (collaboratorsError) throw collaboratorsError;
+      }
+
       // Fetch the complete event
       const { data: completeEvent, error: fetchError } = await supabase
         .from('events')
@@ -118,13 +205,22 @@ export const createEvent = createAsyncThunk(
 
       if (imagesError) throw imagesError;
 
-      // Return combined event data with images
+      // Fetch collaborators for this event
+      const { data: eventCollaborators, error: collaboratorsError } = await supabase
+        .from('event_collaborators')
+        .select('user_id')
+        .eq('event_id', event.id);
+
+      if (collaboratorsError) throw collaboratorsError;
+
+      // Return combined event data with images and collaborators
       return {
         ...completeEvent,
         images: eventImages.map(img => ({
           url: img.image_url,
           is_primary: img.is_primary
-        }))
+        })),
+        collaborators: eventCollaborators.map(c => c.user_id)
       };
     } catch (error: any) {
       throw new Error(error.message);
@@ -136,8 +232,8 @@ export const updateEvent = createAsyncThunk(
   'events/updateEvent',
   async ({ eventId, eventData }: { eventId: number; eventData: Partial<Event> }) => {
     try {
-      // Remove images from eventData since it's not a column in events table
-      const { images, ...eventFields } = eventData as any;
+      // Remove images and collaborators from eventData since they're in separate tables
+      const { images, collaborators, ...eventFields } = eventData as any;
 
       // Update event
       const { data: event, error: eventError } = await supabase
@@ -175,6 +271,31 @@ export const updateEvent = createAsyncThunk(
         }
       }
 
+      // Handle collaborators separately in event_collaborators table
+      if (collaborators) {
+        // Delete existing collaborators
+        const { error: deleteError } = await supabase
+          .from('event_collaborators')
+          .delete()
+          .eq('event_id', eventId);
+
+        if (deleteError) throw deleteError;
+
+        // Insert new collaborators
+        if (collaborators.length > 0) {
+          const { error: insertError } = await supabase
+            .from('event_collaborators')
+            .insert(
+              collaborators.map((userId: string) => ({
+                event_id: eventId,
+                user_id: userId
+              }))
+            );
+
+          if (insertError) throw insertError;
+        }
+      }
+
       // Fetch the complete event
       const { data: completeEvent, error: fetchError } = await supabase
         .from('events')
@@ -192,13 +313,22 @@ export const updateEvent = createAsyncThunk(
 
       if (imagesError) throw imagesError;
 
-      // Return combined event data with images
+      // Fetch collaborators for this event
+      const { data: eventCollaborators, error: collaboratorsError } = await supabase
+        .from('event_collaborators')
+        .select('user_id')
+        .eq('event_id', eventId);
+
+      if (collaboratorsError) throw collaboratorsError;
+
+      // Return combined event data with images and collaborators
       return {
         ...completeEvent,
         images: eventImages.map(img => ({
           url: img.image_url,
           is_primary: img.is_primary
-        }))
+        })),
+        collaborators: eventCollaborators.map(c => c.user_id)
       };
     } catch (error: any) {
       throw new Error(error.message);
