@@ -15,7 +15,7 @@ import {
 } from "../../../components/ui/card";
 import { Calendar, Users, FolderOpen, Activity } from "lucide-react";
 import { formatDistanceToNow, format, isAfter } from "date-fns";
-import { EventList } from "../EventManager/EventList";
+import {EventList}  from "../EventManager/EventList";
 
 export const Dashboard: React.FC = () => {
   const dispatch = useAppDispatch();

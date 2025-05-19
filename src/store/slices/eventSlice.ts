@@ -17,7 +17,8 @@ interface Collaborator {
   id: string;
   email: string;
   full_name: string;
-  role_id?: number; // Include role_id for collaborators
+  role_id?: number;
+  role_name?: string;
 }
 
 const initialState: EventState = {
@@ -28,7 +29,6 @@ const initialState: EventState = {
 
 export const fetchEvents = createAsyncThunk("events/fetchEvents", async () => {
   try {
-    // Fetch all events
     const { data: events, error: eventsError } = await supabase
       .from("events")
       .select("*")
@@ -36,14 +36,12 @@ export const fetchEvents = createAsyncThunk("events/fetchEvents", async () => {
 
     if (eventsError) throw eventsError;
 
-    // Fetch all event images
     const { data: images, error: imagesError } = await supabase
       .from("event_images")
       .select("*");
 
     if (imagesError) throw imagesError;
 
-    // Fetch all event collaborators with role information
     const { data: collaborators, error: collaboratorsError } = await supabase
       .from("event_collaborators")
       .select("event_id, user_id, role_id, roles(role_name)");
@@ -51,7 +49,6 @@ export const fetchEvents = createAsyncThunk("events/fetchEvents", async () => {
     if (collaboratorsError) throw collaboratorsError;
     if (!collaborators) throw new Error("Failed to fetch collaborators");
 
-    // Fetch user details for all collaborators
     const userIds = [...new Set(collaborators.map((c) => c.user_id))];
     const { data: profiles, error: profilesError } = await supabase
       .from("profiles")
@@ -61,16 +58,14 @@ export const fetchEvents = createAsyncThunk("events/fetchEvents", async () => {
     if (profilesError) throw profilesError;
     if (!profiles) throw new Error("Failed to fetch profiles");
 
-    // Create a map of user details
     const userDetails = profiles.reduce((acc, profile) => {
       acc[profile.user_id] = {
-        email: "", // Email will be fetched from session or another source if needed
+        email: "",
         full_name: profile.full_name,
       };
       return acc;
     }, {} as Record<string, { email: string; full_name: string }>);
 
-    // Group images by event_id
     const imagesByEvent = images.reduce((acc, img) => {
       if (!acc[img.event_id]) {
         acc[img.event_id] = [];
@@ -82,7 +77,6 @@ export const fetchEvents = createAsyncThunk("events/fetchEvents", async () => {
       return acc;
     }, {} as Record<number, EventImage[]>);
 
-    // Group collaborators by event_id with their details and roles
     const collaboratorsByEvent = collaborators.reduce((acc, collab) => {
       if (!acc[collab.event_id]) {
         acc[collab.event_id] = [];
@@ -100,7 +94,6 @@ export const fetchEvents = createAsyncThunk("events/fetchEvents", async () => {
       return acc;
     }, {} as Record<number, Collaborator[]>);
 
-    // Combine events with their images and collaborators
     const eventsWithImages = events.map((event) => ({
       ...event,
       images: imagesByEvent[event.id] || [],
@@ -122,10 +115,8 @@ export const createEvent = createAsyncThunk(
     >
   ) => {
     try {
-      // Remove images and collaborators from eventData since they're in separate tables
       const { images, collaborators, ...eventFields } = eventData as any;
 
-      // Create event
       const { data: event, error: eventError } = await supabase
         .from("events")
         .insert(eventFields)
@@ -134,7 +125,6 @@ export const createEvent = createAsyncThunk(
 
       if (eventError) throw eventError;
 
-      // Handle images separately in event_images table
       if (images && images.length > 0) {
         const { error: imagesError } = await supabase
           .from("event_images")
@@ -149,9 +139,7 @@ export const createEvent = createAsyncThunk(
         if (imagesError) throw imagesError;
       }
 
-      // Handle collaborators separately in event_collaborators table
       if (collaborators && collaborators.length > 0) {
-        // Validate that all collaborators exist in profiles table
         const { data: validUsers, error: userError } = await supabase
           .from("profiles")
           .select("user_id")
@@ -168,7 +156,6 @@ export const createEvent = createAsyncThunk(
           );
         }
 
-        // Assume default role (e.g., 'Member' with role_id 3) for collaborators
         const { data: memberRole, error: roleError } = await supabase
           .from("roles")
           .select("id")
@@ -183,14 +170,13 @@ export const createEvent = createAsyncThunk(
             collaborators.map((userId: string) => ({
               event_id: event.id,
               user_id: userId,
-              role_id: memberRole.id, // Assign default role
+              role_id: memberRole.id,
             }))
           );
 
         if (collaboratorsError) throw collaboratorsError;
       }
 
-      // Fetch the complete event
       const { data: completeEvent, error: fetchError } = await supabase
         .from("events")
         .select("*")
@@ -199,7 +185,6 @@ export const createEvent = createAsyncThunk(
 
       if (fetchError) throw fetchError;
 
-      // Fetch images for this event
       const { data: eventImages, error: imagesError } = await supabase
         .from("event_images")
         .select("*")
@@ -207,7 +192,6 @@ export const createEvent = createAsyncThunk(
 
       if (imagesError) throw imagesError;
 
-      // Fetch collaborators for this event with role information
       const { data: eventCollaborators, error: collaboratorsError } =
         await supabase
           .from("event_collaborators")
@@ -216,7 +200,6 @@ export const createEvent = createAsyncThunk(
 
       if (collaboratorsError) throw collaboratorsError;
 
-      // Fetch profiles for collaborators
       const collaboratorUserIds = eventCollaborators.map((c) => c.user_id);
       const { data: collaboratorProfiles, error: profilesError } =
         await supabase
@@ -245,7 +228,6 @@ export const createEvent = createAsyncThunk(
         role_name: c.roles?.role_name,
       }));
 
-      // Return combined event data with images and collaborators
       return {
         ...completeEvent,
         images: eventImages.map((img) => ({
@@ -270,10 +252,8 @@ export const updateEvent = createAsyncThunk(
     eventData: Partial<Event>;
   }) => {
     try {
-      // Remove images and collaborators from eventData since they're in separate tables
       const { images, collaborators, ...eventFields } = eventData as any;
 
-      // Update event
       const { data: event, error: eventError } = await supabase
         .from("events")
         .update(eventFields)
@@ -283,9 +263,7 @@ export const updateEvent = createAsyncThunk(
 
       if (eventError) throw eventError;
 
-      // Handle images separately in event_images table
       if (images) {
-        // Delete existing images
         const { error: deleteError } = await supabase
           .from("event_images")
           .delete()
@@ -293,7 +271,6 @@ export const updateEvent = createAsyncThunk(
 
         if (deleteError) throw deleteError;
 
-        // Insert new images
         if (images.length > 0) {
           const { error: insertError } = await supabase
             .from("event_images")
@@ -309,9 +286,7 @@ export const updateEvent = createAsyncThunk(
         }
       }
 
-      // Handle collaborators separately in event_collaborators table
       if (collaborators) {
-        // Delete existing collaborators
         const { error: deleteError } = await supabase
           .from("event_collaborators")
           .delete()
@@ -319,9 +294,7 @@ export const updateEvent = createAsyncThunk(
 
         if (deleteError) throw deleteError;
 
-        // Insert new collaborators
         if (collaborators.length > 0) {
-          // Validate that all collaborators exist in profiles table
           const { data: validUsers, error: userError } = await supabase
             .from("profiles")
             .select("user_id")
@@ -338,7 +311,6 @@ export const updateEvent = createAsyncThunk(
             );
           }
 
-          // Assume default role (e.g., 'Member' with role_id 3) for collaborators
           const { data: memberRole, error: roleError } = await supabase
             .from("roles")
             .select("id")
@@ -353,7 +325,7 @@ export const updateEvent = createAsyncThunk(
               collaborators.map((userId: string) => ({
                 event_id: eventId,
                 user_id: userId,
-                role_id: memberRole.id, // Assign default role
+                role_id: memberRole.id,
               }))
             );
 
@@ -361,7 +333,6 @@ export const updateEvent = createAsyncThunk(
         }
       }
 
-      // Fetch the complete event
       const { data: completeEvent, error: fetchError } = await supabase
         .from("events")
         .select("*")
@@ -370,7 +341,6 @@ export const updateEvent = createAsyncThunk(
 
       if (fetchError) throw fetchError;
 
-      // Fetch images for this event
       const { data: eventImages, error: imagesError } = await supabase
         .from("event_images")
         .select("*")
@@ -378,7 +348,6 @@ export const updateEvent = createAsyncThunk(
 
       if (imagesError) throw imagesError;
 
-      // Fetch collaborators for this event with role information
       const { data: eventCollaborators, error: collaboratorsError } =
         await supabase
           .from("event_collaborators")
@@ -387,7 +356,6 @@ export const updateEvent = createAsyncThunk(
 
       if (collaboratorsError) throw collaboratorsError;
 
-      // Fetch profiles for collaborators
       const collaboratorUserIds = eventCollaborators.map((c) => c.user_id);
       const { data: collaboratorProfiles, error: profilesError } =
         await supabase
@@ -416,7 +384,6 @@ export const updateEvent = createAsyncThunk(
         role_name: c.roles?.role_name,
       }));
 
-      // Return combined event data with images and collaborators
       return {
         ...completeEvent,
         images: eventImages.map((img) => ({
@@ -434,7 +401,6 @@ export const updateEvent = createAsyncThunk(
 export const addCollaborator = createAsyncThunk(
   "events/addCollaborator",
   async ({ eventId, userId }: { eventId: number; userId: string }) => {
-    // Validate that the user exists in profiles table
     const { data: validUser, error: userError } = await supabase
       .from("profiles")
       .select("user_id")
@@ -443,7 +409,6 @@ export const addCollaborator = createAsyncThunk(
 
     if (userError || !validUser) throw new Error(`Invalid user: ${userId}`);
 
-    // Assume default role (e.g., 'Member')
     const { data: memberRole, error: roleError } = await supabase
       .from("roles")
       .select("id")
@@ -457,7 +422,26 @@ export const addCollaborator = createAsyncThunk(
       .insert({ event_id: eventId, user_id: userId, role_id: memberRole.id });
 
     if (error) throw error;
-    return { eventId, userId };
+
+    // Fetch user details for the collaborator
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("user_id, full_name")
+      .eq("user_id", userId)
+      .single();
+
+    if (profileError) throw profileError;
+
+    return {
+      eventId,
+      collaborator: {
+        id: userId,
+        email: "",
+        full_name: profile.full_name || "",
+        role_id: memberRole.id,
+        role_name: "Member",
+      },
+    };
   }
 );
 
@@ -472,6 +456,41 @@ export const removeCollaborator = createAsyncThunk(
 
     if (error) throw error;
     return { eventId, userId };
+  }
+);
+
+export const deleteEvent = createAsyncThunk(
+  "events/deleteEvent",
+  async (eventId: number) => {
+    try {
+      // Delete related event images
+      const { error: imagesError } = await supabase
+        .from("event_images")
+        .delete()
+        .eq("event_id", eventId);
+
+      if (imagesError) throw imagesError;
+
+      // Delete related event collaborators
+      const { error: collaboratorsError } = await supabase
+        .from("event_collaborators")
+        .delete()
+        .eq("event_id", eventId);
+
+      if (collaboratorsError) throw collaboratorsError;
+
+      // Delete the event
+      const { error: eventError } = await supabase
+        .from("events")
+        .delete()
+        .eq("id", eventId);
+
+      if (eventError) throw eventError;
+
+      return eventId;
+    } catch (error: any) {
+      throw new Error(error.message || "Failed to delete event");
+    }
   }
 );
 
@@ -522,21 +541,28 @@ const eventSlice = createSlice({
         state.loading = false;
         state.error = action.error.message || "Failed to update event";
       })
+      .addCase(addCollaborator.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
       .addCase(addCollaborator.fulfilled, (state, action) => {
-        const { eventId, userId } = action.payload;
+        state.loading = false;
+        const { eventId, collaborator } = action.payload;
         const event = state.events.find((e) => e.id === eventId);
         if (event) {
-          // Fetch user details to add to collaborators
-          // This is a simplification; you may need to fetch from profiles
-          event.collaborators.push({
-            id: userId,
-            email: "",
-            full_name: "",
-            role_id: undefined,
-          });
+          event.collaborators.push(collaborator);
         }
       })
+      .addCase(addCollaborator.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || "Failed to add collaborator";
+      })
+      .addCase(removeCollaborator.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
       .addCase(removeCollaborator.fulfilled, (state, action) => {
+        state.loading = false;
         const { eventId, userId } = action.payload;
         const event = state.events.find((e) => e.id === eventId);
         if (event) {
@@ -544,6 +570,24 @@ const eventSlice = createSlice({
             (c) => c.id !== userId
           );
         }
+      })
+      .addCase(removeCollaborator.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || "Failed to remove collaborator";
+      })
+      .addCase(deleteEvent.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(deleteEvent.fulfilled, (state, action) => {
+        state.loading = false;
+        state.events = state.events.filter(
+          (event) => event.id !== action.payload
+        );
+      })
+      .addCase(deleteEvent.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || "Failed to delete event";
       });
   },
 });
