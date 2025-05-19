@@ -411,8 +411,8 @@ export const ProjectList: React.FC = () => {
   }
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
-      <div className="flex justify-between items-center mb-8 max-w-7xl mx-auto">
+    <div className="p-6 bg-gray-50 pl-16 ">
+      <div className="flex justify-between items-center mb-8 ">
         <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Projects</h1>
         <Dialog
           open={isCreating || isEditing !== null}
@@ -752,35 +752,42 @@ export const ProjectList: React.FC = () => {
           return (
             <div
               key={project.id}
-              className="relative bg-white rounded-2xl shadow-lg overflow-hidden w-full transition-all duration-300 hover:shadow-xl"
+              className="relative bg-white rounded-2xl shadow-lg   transition-all duration-300 hover:shadow-xl"
             >
               <div className="relative h-48 group">
+                {console.log("primary image", primaryImage)}
                 {primaryImage ? (
                   <img
                     src={primaryImage}
                     alt={project.name}
                     className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                     onError={(e) => {
-                      console.error('Primary image failed to load:', primaryImage);
-                      e.currentTarget.src = 'https://via.placeholder.com/600x200?text=Image+Not+Found';
+                      console.error(
+                        "Primary image failed to load:",
+                        primaryImage
+                      );
+                      e.currentTarget.src =
+                        "https://via.placeholder.com/600x200?text=Image+Not+Found";
                     }}
                   />
                 ) : (
                   <div className="w-full h-full bg-gradient-to-br from-teal-400 to-purple-500 flex items-center justify-center">
-                    <span className="text-white text-4xl font-bold">{project.name.charAt(0)}</span>
+                    <span className="text-white text-4xl font-bold">
+                      {project.name.charAt(0)}
+                    </span>
                   </div>
                 )}
-                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity duration-300"></div>
+                <div className="absolute inset-0 bg-black/10 group-hover:bg-opacity-20 transition-opacity duration-300"></div>
                 <div className="absolute top-4 right-4">
                   <span
                     className={`px-3 py-1 rounded-full text-xs font-semibold text-white shadow-sm ${
-                      project.status === 'Active'
-                        ? 'bg-teal-500'
-                        : project.status === 'Completed'
-                        ? 'bg-blue-500'
-                        : project.status === 'On Hold'
-                        ? 'bg-yellow-500'
-                        : 'bg-red-500'
+                      project.status === "Active"
+                        ? "bg-teal-500"
+                        : project.status === "Completed"
+                        ? "bg-blue-500"
+                        : project.status === "On Hold"
+                        ? "bg-yellow-500"
+                        : "bg-red-500"
                     }`}
                   >
                     {project.status}
@@ -790,7 +797,9 @@ export const ProjectList: React.FC = () => {
 
               <div className="p-6">
                 <div className="flex justify-between items-start mb-4">
-                  <h3 className="text-xl font-bold text-gray-900">{project.name}</h3>
+                  <h3 className="text-xl font-bold text-gray-900">
+                    {project.name}
+                  </h3>
                   <div className="flex space-x-2">
                     <Button
                       variant="ghost"
@@ -806,7 +815,7 @@ export const ProjectList: React.FC = () => {
                       size="sm"
                       onClick={() => handleArchive(project)}
                       className="text-gray-600 hover:text-teal-600"
-                      title={project.is_archived ? 'Unarchive' : 'Archive'}
+                      title={project.is_archived ? "Unarchive" : "Archive"}
                     >
                       <Archive className="w-4 h-4" />
                     </Button>
@@ -873,26 +882,37 @@ export const ProjectList: React.FC = () => {
                   className="w-full flex justify-between items-center text-teal-600 hover:bg-teal-50"
                   onClick={() => toggleProjectDetails(project.id)}
                 >
-                  <span>{isExpanded ? 'Hide Details' : 'Show Details'}</span>
-                  {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  <span>{isExpanded ? "Hide Details" : "Show Details"}</span>
+                  {isExpanded ? (
+                    <ChevronUp className="w-4 h-4" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4" />
+                  )}
                 </Button>
 
                 {isExpanded && (
                   <div className="mt-4 space-y-4 animate-in fade-in duration-300">
-                    <p className="text-gray-600 text-sm">{project.description}</p>
+                    <p className="text-gray-600 text-sm">
+                      {project.description}
+                    </p>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="bg-teal-50 p-3 rounded-lg shadow-sm">
                         <div className="text-xs text-gray-500 flex items-center">
                           <Users className="w-4 h-4 mr-1" /> Budget
                         </div>
-                        <div className="text-lg font-semibold text-teal-700">${project.budget.toLocaleString()}</div>
+                        <div className="text-lg font-semibold text-teal-700">
+                          ${project.budget.toLocaleString()}
+                        </div>
                       </div>
                       <div className="bg-teal-50 p-3 rounded-lg shadow-sm">
                         <div className="text-xs text-gray-500 flex items-center">
                           <Users className="w-4 h-4 mr-1" /> Team
                         </div>
-                        <div className="text-lg font-semibold text-teal-700">{project.team_members_count}/{project.max_team_members || '∞'}</div>
+                        <div className="text-lg font-semibold text-teal-700">
+                          {project.team_members_count}/
+                          {project.max_team_members || "∞"}
+                        </div>
                       </div>
                     </div>
 
@@ -901,21 +921,41 @@ export const ProjectList: React.FC = () => {
                         <Users className="w-4 h-4 mr-1" /> Team Details
                       </div>
                       <div className="text-sm text-teal-700 mt-2">
-                        <p><span className="font-semibold">Owner:</span> {ownerName}</p>
-                        <p><span className="font-semibold">Manager:</span> {managerName}</p>
-                        <p><span className="font-semibold">Collaborators:</span> {project.collaborators.length > 0 ? 
-                          project.collaborators.map(c => `${c.full_name} (${c.role_name || 'Member'})`).join(', ') : 'None'}</p>
+                        <p>
+                          <span className="font-semibold">Owner:</span>{" "}
+                          {ownerName}
+                        </p>
+                        <p>
+                          <span className="font-semibold">Manager:</span>{" "}
+                          {managerName}
+                        </p>
+                        <p>
+                          <span className="font-semibold">Collaborators:</span>{" "}
+                          {project.collaborators.length > 0
+                            ? project.collaborators
+                                .map(
+                                  (c) =>
+                                    `${c.full_name} (${
+                                      c.role_name || "Member"
+                                    })`
+                                )
+                                .join(", ")
+                            : "None"}
+                        </p>
                       </div>
                     </div>
 
                     <div className="flex items-center text-xs text-gray-600">
                       <Clock className="w-4 h-4 mr-1" />
-                      {new Date(project.start_date).toLocaleDateString()} - {new Date(project.end_date).toLocaleDateString()}
+                      {new Date(project.start_date).toLocaleDateString()} -{" "}
+                      {new Date(project.end_date).toLocaleDateString()}
                     </div>
 
                     <div className="flex items-center text-xs text-gray-600">
                       <Tag className="w-4 h-4 mr-1" />
-                      <span>Days Left: {daysUntilEnd > 0 ? daysUntilEnd : 'Ended'}</span>
+                      <span>
+                        Days Left: {daysUntilEnd > 0 ? daysUntilEnd : "Ended"}
+                      </span>
                     </div>
 
                     {project.tags && project.tags.length > 0 && (
@@ -923,7 +963,7 @@ export const ProjectList: React.FC = () => {
                         {project.tags.map((tag, index) => (
                           <span
                             key={index}
-                            className="px-2 py-1 bg-teal-100 text-teal-700 text-xs rounded-full hover:bg-teal-200 transition-colors"
+                            className="px-2 py-1 bg-teal-100 te50xt-teal-700 text-xs rounded-full hover:bg-teal-200 transition-colors"
                           >
                             {tag}
                           </span>
@@ -933,20 +973,29 @@ export const ProjectList: React.FC = () => {
 
                     {images.length > 0 && (
                       <div>
-                        <h4 className="text-sm font-semibold text-gray-900 mb-2">Image Gallery</h4>
+                        <h4 className="text-sm font-semibold text-gray-900 mb-2">
+                          Image Gallery
+                        </h4>
                         <div className="flex overflow-x-auto gap-3 pb-3">
                           {nonPrimaryImages.map((img, index) => (
-                            <div key={index} className="relative group flex-shrink-0">
+                            <div
+                              key={index}
+                              className="relative group flex-shrink-0"
+                            >
                               <img
                                 src={img.url}
                                 alt={`${project.name} image ${index + 1}`}
                                 className="w-32 h-24 object-cover rounded-lg transition-transform duration-300 group-hover:scale-105 shadow-sm"
                                 onError={(e) => {
-                                  console.error('Gallery image failed to load:', img.url);
-                                  e.currentTarget.src = 'https://via.placeholder.com/128x96?text=Image+Not+Found';
+                                  console.error(
+                                    "Gallery image failed to load:",
+                                    img.url
+                                  );
+                                  e.currentTarget.src =
+                                    "https://via.placeholder.com/128x96?text=Image+Not+Found";
                                 }}
                               />
-                              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity duration-300"></div>
+                              <div className="absolute inset-0 bg-black/10 bg-opacity-0 group-hover:bg-opacity-10 transition-opacity duration-300"></div>
                             </div>
                           ))}
                         </div>
@@ -959,8 +1008,13 @@ export const ProjectList: React.FC = () => {
               {deleteConfirmId === project.id && (
                 <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
                   <div className="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full">
-                    <h3 className="text-lg font-bold text-gray-900 mb-3">Delete Project?</h3>
-                    <p className="text-gray-600 mb-4">Are you sure you want to delete "{project.name}"? This action cannot be undone.</p>
+                    <h3 className="text-lg font-bold text-gray-900 mb-3">
+                      Delete Project?
+                    </h3>
+                    <p className="text-gray-600 mb-4">
+                      Are you sure you want to delete "{project.name}"? This
+                      action cannot be undone.
+                    </p>
                     <div className="flex justify-end space-x-3">
                       <Button
                         variant="outline"
