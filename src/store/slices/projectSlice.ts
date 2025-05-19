@@ -1,3 +1,4 @@
+
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { supabase } from "../../supabaseClient";
 
@@ -204,6 +205,17 @@ export const createProject = createAsyncThunk(
       // Extract images and collaborators
       const { images, collaborators, ...projectFields } = projectData;
 
+      // Validate images: ensure only one is_primary
+      let validatedImages = images || [];
+      const primaryCount = validatedImages.filter(img => img.is_primary).length;
+      if (primaryCount > 1) {
+        console.warn("Multiple primary images detected. Setting only the first as primary.");
+        validatedImages = validatedImages.map((img, index) => ({
+          ...img,
+          is_primary: index === validatedImages.findIndex(i => i.is_primary),
+        }));
+      }
+
       // Create project
       const { data: project, error: projectError } = await supabase
         .from("projects")
@@ -218,11 +230,11 @@ export const createProject = createAsyncThunk(
       if (projectError) throw projectError;
 
       // Handle images
-      if (images && images.length > 0) {
+      if (validatedImages.length > 0) {
         const { error: imagesError } = await supabase
           .from("project_images")
           .insert(
-            images.map((img) => ({
+            validatedImages.map((img) => ({
               project_id: project.id,
               image_url: img.url,
               is_primary: img.is_primary,
@@ -423,12 +435,29 @@ export const updateProject = createAsyncThunk(
 
         if (deleteError) throw deleteError;
 
+        // Validate images: ensure only one is_primary
+        let validatedImages = images;
+        const primaryCount = validatedImages.filter(img => img.is_primary).length;
+        if (primaryCount > 1) {
+          console.warn("Multiple primary images detected. Setting only the first as primary.");
+          validatedImages = validatedImages.map((img, index) => ({
+            ...img,
+            is_primary: index === validatedImages.findIndex(i => i.is_primary),
+          }));
+        } else if (primaryCount === 0 && validatedImages.length > 0) {
+          console.warn("No primary image set. Setting the first image as primary.");
+          validatedImages = validatedImages.map((img, index) => ({
+            ...img,
+            is_primary: index === 0,
+          }));
+        }
+
         // Insert new images
-        if (images.length > 0) {
+        if (validatedImages.length > 0) {
           const { error: insertError } = await supabase
             .from("project_images")
             .insert(
-              images.map((img) => ({
+              validatedImages.map((img) => ({
                 project_id: projectId,
                 image_url: img.url,
                 is_primary: img.is_primary,
