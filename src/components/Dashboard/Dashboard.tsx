@@ -1,1 +1,0 @@
-import EventList from '../pages/EventManager/EventList'; 
