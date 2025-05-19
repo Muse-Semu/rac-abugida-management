@@ -5,7 +5,7 @@ import { fetchProjects } from "../../../store/slices/projectSlice";
 import { fetchUsers } from "../../../store/slices/userSlice";
 import { Sidebar } from "../../Layout/Sidebar";
 import { DashboardTour } from "../../Tour/DashboardTour";
-import { ProjectList } from "../ProjectManager/ProjectList";
+import ProjectList from "../ProjectManager/ProjectList";
 import { UserList } from "../UserManager/UserList";
 import {
   Card,
