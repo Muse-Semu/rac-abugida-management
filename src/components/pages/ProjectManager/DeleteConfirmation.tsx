@@ -42,7 +42,7 @@ export const DeleteConfirmation: React.FC<DeleteConfirmationProps> = ({
   };
 
   return (
-    <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+    <div className="absolute inset-0 bg-black/600 backdrop-blur-sm flex items-center justify-center">
       <div className="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full">
         <h3 className="text-lg font-bold text-gray-900 mb-3">
           Delete Project?
