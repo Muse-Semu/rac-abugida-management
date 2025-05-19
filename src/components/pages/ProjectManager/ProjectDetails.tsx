@@ -5,12 +5,43 @@ import { Clock, Tag, Users } from "lucide-react";
 
 interface ProjectDetailsProps {
   project: Project;
+  setFullScreenImage: (
+    value: { projectId: string; index: number } | null
+  ) => void;
 }
 
-const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project }) => {
+const ProjectDetails: React.FC<ProjectDetailsProps> = ({
+  project,
+  setFullScreenImage,
+}) => {
   const { users, profiles } = useAppSelector((state) => state.users);
   const images = project.images || [];
-  const nonPrimaryImages = images.filter((img) => !img.is_primary);
+
+  // Deduplicate images
+  const getUniqueImages = () => {
+    const seenUrls = new Set<string>();
+    const uniqueImages: { url: string; is_primary: boolean }[] = [];
+    let primaryAssigned = false;
+
+    for (const image of images) {
+      if (!seenUrls.has(image.url)) {
+        seenUrls.add(image.url);
+        uniqueImages.push({
+          url: image.url,
+          is_primary: image.is_primary && !primaryAssigned,
+        });
+        if (image.is_primary) primaryAssigned = true;
+      }
+    }
+
+    if (!primaryAssigned && uniqueImages.length > 0) {
+      uniqueImages[0].is_primary = true;
+    }
+
+    return uniqueImages;
+  };
+
+  const uniqueImages = getUniqueImages();
 
   const getDaysUntilEnd = (endDate: string) => {
     const today = new Date();
@@ -100,30 +131,7 @@ const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project }) => {
         </div>
       )}
 
-      {images.length > 0 && (
-        <div>
-          <h4 className="text-sm font-semibold text-gray-900 mb-2">
-            Image Gallery
-          </h4>
-          <div className="flex overflow-x-auto gap-3 pb-3">
-            {nonPrimaryImages.map((img, index) => (
-              <div key={index} className="relative group flex-shrink-0">
-                <img
-                  src={img.url}
-                  alt={`${project.name} image ${index + 1}`}
-                  className="w-32 h-24 object-cover rounded-lg transition-transform duration-300 group-hover:scale-105 shadow-sm"
-                  onError={(e) => {
-                    console.error("Gallery image failed to load:", img.url);
-                    e.currentTarget.src =
-                      "https://via.placeholder.com/128x96?text=Image+Not+Found";
-                  }}
-                />
-                <div className="absolute inset-0 bg-black/10 bg-opacity-0 group-hover:bg-opacity-10 transition-opacity duration-300"></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+     
     </div>
   );
 };
