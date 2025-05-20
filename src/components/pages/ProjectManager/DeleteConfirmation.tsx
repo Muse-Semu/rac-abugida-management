@@ -48,7 +48,7 @@ export const DeleteConfirmation: React.FC<DeleteConfirmationProps> = ({
           Delete Project?
         </h3>
         <p className="text-gray-600 mb-4">
-          Are you sure you want to delete "{project.name}"? This action cannot
+          Are you sure you want to delete "{project?.name}"? This action cannot
           be undone.
         </p>
         <div className="flex justify-end space-x-3">
