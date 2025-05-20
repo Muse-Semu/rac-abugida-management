@@ -60,7 +60,7 @@ const FullScreenImageModal: React.FC<FullScreenImageModalProps> = ({
 
   return (
     <div
-      className="fixed  inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50"
       role="dialog"
       aria-label="Full-screen image viewer"
       onKeyDown={(e) => {
@@ -70,7 +70,7 @@ const FullScreenImageModal: React.FC<FullScreenImageModalProps> = ({
       }}
       tabIndex={0}
     >
-      <div className="relative  w-full h-full max-w-5xl max-h-[90vh] flex items-center justify-center">
+      <div className="relative w-full h-full max-w-5xl max-h-[90vh] flex items-center justify-center">
         <img
           src={images[currentIndex].url}
           alt={`Project image ${currentIndex + 1}`}
@@ -153,6 +153,9 @@ const ProjectList: React.FC = () => {
   });
   const [selectedCollaborators, setSelectedCollaborators] = useState([]);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
+  const [existingImages, setExistingImages] = useState<
+    { url: string; is_primary: boolean }[]
+  >([]);
   const [primaryImageIndex, setPrimaryImageIndex] = useState(0);
 
   useEffect(() => {
@@ -197,9 +200,10 @@ const ProjectList: React.FC = () => {
       project_manager_id: "",
       owner_id: currentUserId,
     });
-    setSelectedImages([]);
-    setPrimaryImageIndex(0);
     setSelectedCollaborators([]);
+    setSelectedImages([]);
+    setExistingImages([]);
+    setPrimaryImageIndex(0);
     setIsCreating(false);
     setIsEditing(null);
   };
@@ -212,9 +216,15 @@ const ProjectList: React.FC = () => {
       end_date: new Date(project.end_date).toISOString().split("T")[0],
     });
     setSelectedCollaborators(project.collaborators || []);
-    setSelectedImages([]); // Images are re-uploaded on edit
+    setSelectedImages([]);
+    setExistingImages(
+      (project.images || []).map((img: any) => ({
+        url: img.image_url || img.url,
+        is_primary: img.is_primary,
+      }))
+    );
     setPrimaryImageIndex(
-      project.images?.findIndex((img) => img.is_primary) || 0
+      (project.images || []).findIndex((img: any) => img.is_primary) || 0
     );
     setExpandedProjectId(null);
   };
@@ -270,12 +280,12 @@ const ProjectList: React.FC = () => {
   }
 
   return (
-    <div className=" p-6 bg-gradient-to-br from-gray-50 to-teal-50 ">
+    <div className="p-6 bg-gradient-to-br from-gray-50 to-teal-50">
       <div className="pl-16 py-6">
         {/* Header Section */}
-        <div className="flex sm:flex-row justify-between items-center mb-8">
+        <div className="flex sm:flex-row justify-between items-center mb-8  ">
           <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight mb-4 sm:mb-0">
-           Projects
+            Projects
           </h1>
           <Dialog
             open={isCreating || isEditing !== null}
@@ -299,6 +309,8 @@ const ProjectList: React.FC = () => {
               setSelectedCollaborators={setSelectedCollaborators}
               selectedImages={selectedImages}
               setSelectedImages={setSelectedImages}
+              existingImages={existingImages}
+              setExistingImages={setExistingImages}
               primaryImageIndex={primaryImageIndex}
               setPrimaryImageIndex={setPrimaryImageIndex}
               currentUserId={currentUserId}
@@ -308,7 +320,7 @@ const ProjectList: React.FC = () => {
         </div>
 
         {/* Filter and Search Controls */}
-        <div className="bg-white p-4 rounded-xl shadow-md  mb-6 flex  sm:flex-row gap-4 items-center">
+        <div className="bg-white p-4 rounded-xl shadow-md mb-6 flex sm:flex-row gap-4 items-center">
           <div className="relative flex">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
             <Input
@@ -372,7 +384,7 @@ const ProjectList: React.FC = () => {
 
         {/* Project Grid */}
         <motion.div
-          className="grid  grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
           layout
         >
           <AnimatePresence>

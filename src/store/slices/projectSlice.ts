@@ -1,4 +1,3 @@
-
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { supabase } from "../../supabaseClient";
 
@@ -124,8 +123,15 @@ export const fetchProjects = createAsyncThunk(
         return acc;
       }, {} as Record<string, { email: string; full_name: string }>);
 
+      // Validate and filter images
+      const validImages =
+        images?.filter(
+          (img) => img.image_url && typeof img.image_url === "string"
+        ) || [];
+      console.log("Fetched project images:", validImages); // Debug log
+
       // Group images by project_id
-      const imagesByProject = images.reduce((acc, img) => {
+      const imagesByProject = validImages.reduce((acc, img) => {
         if (!acc[img.project_id]) {
           acc[img.project_id] = [];
         }
@@ -161,8 +167,10 @@ export const fetchProjects = createAsyncThunk(
         collaborators: collaboratorsByProject[project.id] || [],
       }));
 
+      console.log("Mapped projects with images:", projectsWithDetails); // Debug log
       return projectsWithDetails;
     } catch (error: any) {
+      console.error("Error in fetchProjects:", error); // Debug log
       return rejectWithValue(error.message);
     }
   }
@@ -207,12 +215,24 @@ export const createProject = createAsyncThunk(
 
       // Validate images: ensure only one is_primary
       let validatedImages = images || [];
-      const primaryCount = validatedImages.filter(img => img.is_primary).length;
+      const primaryCount = validatedImages.filter(
+        (img) => img.is_primary
+      ).length;
       if (primaryCount > 1) {
-        console.warn("Multiple primary images detected. Setting only the first as primary.");
+        console.warn(
+          "Multiple primary images detected. Setting only the first as primary."
+        );
         validatedImages = validatedImages.map((img, index) => ({
           ...img,
-          is_primary: index === validatedImages.findIndex(i => i.is_primary),
+          is_primary: index === validatedImages.findIndex((i) => i.is_primary),
+        }));
+      } else if (primaryCount === 0 && validatedImages.length > 0) {
+        console.warn(
+          "No primary image set. Setting the first image as primary."
+        );
+        validatedImages = validatedImages.map((img, index) => ({
+          ...img,
+          is_primary: index === 0,
         }));
       }
 
@@ -363,6 +383,7 @@ export const createProject = createAsyncThunk(
         collaborators: formattedCollaborators,
       };
     } catch (error: any) {
+      console.error("Error in createProject:", error); // Debug log
       return rejectWithValue(error.message);
     }
   }
@@ -426,51 +447,116 @@ export const updateProject = createAsyncThunk(
       if (updateError) throw updateError;
 
       // Handle images
-      if (images) {
-        // Delete existing images
-        const { error: deleteError } = await supabase
+      if (images !== undefined) {
+        // Fetch existing images
+        const { data: existingImages, error: fetchImagesError } = await supabase
           .from("project_images")
-          .delete()
+          .select("id, image_url, is_primary")
           .eq("project_id", projectId);
 
-        if (deleteError) throw deleteError;
+        if (fetchImagesError) throw fetchImagesError;
 
-        // Validate images: ensure only one is_primary
-        let validatedImages = images;
-        const primaryCount = validatedImages.filter(img => img.is_primary).length;
+        // Validate new images: ensure only one is_primary
+        let validatedImages = images || [];
+        const primaryCount = validatedImages.filter(
+          (img) => img.is_primary
+        ).length;
         if (primaryCount > 1) {
-          console.warn("Multiple primary images detected. Setting only the first as primary.");
+          console.warn(
+            "Multiple primary images detected. Setting only the first as primary."
+          );
           validatedImages = validatedImages.map((img, index) => ({
             ...img,
-            is_primary: index === validatedImages.findIndex(i => i.is_primary),
+            is_primary:
+              index === validatedImages.findIndex((i) => i.is_primary),
           }));
         } else if (primaryCount === 0 && validatedImages.length > 0) {
-          console.warn("No primary image set. Setting the first image as primary.");
+          console.warn(
+            "No primary image set. Setting the first image as primary."
+          );
           validatedImages = validatedImages.map((img, index) => ({
             ...img,
             is_primary: index === 0,
           }));
         }
 
+        // Determine images to keep, add, or remove
+        const imagesToKeep = existingImages.filter((existing) =>
+          validatedImages.some((newImg) => newImg.url === existing.image_url)
+        );
+        const imagesToRemove = existingImages.filter(
+          (existing) =>
+            !validatedImages.some((newImg) => newImg.url === existing.image_url)
+        );
+        const imagesToAdd = validatedImages.filter(
+          (newImg) =>
+            !existingImages.some(
+              (existing) => existing.image_url === newImg.url
+            )
+        );
+
+        // Delete removed images
+        if (imagesToRemove.length > 0) {
+          const { error: deleteError } = await supabase
+            .from("project_images")
+            .delete()
+            .in(
+              "id",
+              imagesToRemove.map((img) => img.id)
+            );
+
+          if (deleteError) throw deleteError;
+
+          // Delete from storage
+          const paths = imagesToRemove
+            .map((img) => {
+              const urlParts = img.image_url.split("/project-images/");
+              return urlParts.length > 1 ? urlParts[1] : null;
+            })
+            .filter((path) => path);
+          if (paths.length > 0) {
+            const { error: storageError } = await supabase.storage
+              .from("project-images")
+              .remove(paths);
+            if (storageError)
+              console.warn(
+                "Failed to delete some images from storage:",
+                storageError
+              );
+          }
+        }
+
+        // Update is_primary for kept images
+        for (const keptImage of imagesToKeep) {
+          const newImage = validatedImages.find(
+            (img) => img.url === keptImage.image_url
+          );
+          if (newImage && newImage.is_primary !== keptImage.is_primary) {
+            const { error: updateError } = await supabase
+              .from("project_images")
+              .update({ is_primary: newImage.is_primary })
+              .eq("id", keptImage.id);
+            if (updateError) throw updateError;
+          }
+        }
+
         // Insert new images
-        if (validatedImages.length > 0) {
+        if (imagesToAdd.length > 0) {
           const { error: insertError } = await supabase
             .from("project_images")
             .insert(
-              validatedImages.map((img) => ({
+              imagesToAdd.map((img) => ({
                 project_id: projectId,
                 image_url: img.url,
                 is_primary: img.is_primary,
               }))
             );
-
           if (insertError) throw insertError;
         }
       }
 
-      // Handle collaborators
-      if (collaborators) {
-        // Delete existing collaborators
+      // Handle collaborators (unchanged)
+      if (collaborators !== undefined) {
         const { error: deleteError } = await supabase
           .from("project_collaborators")
           .delete()
@@ -478,9 +564,7 @@ export const updateProject = createAsyncThunk(
 
         if (deleteError) throw deleteError;
 
-        // Insert new collaborators
         if (collaborators.length > 0) {
-          // Validate collaborators
           const { data: validUsers, error: userError } = await supabase
             .from("profiles")
             .select("user_id")
@@ -502,7 +586,6 @@ export const updateProject = createAsyncThunk(
             );
           }
 
-          // Get Member role
           const { data: memberRole, error: roleError } = await supabase
             .from("roles")
             .select("id")
@@ -511,7 +594,6 @@ export const updateProject = createAsyncThunk(
 
           if (roleError) throw roleError;
 
-          // Insert collaborators
           const { error: insertError } = await supabase
             .from("project_collaborators")
             .insert(
@@ -524,7 +606,6 @@ export const updateProject = createAsyncThunk(
 
           if (insertError) throw insertError;
 
-          // Update team_members_count
           const { error: countError } = await supabase
             .from("projects")
             .update({ team_members_count: collaborators.length })
@@ -532,7 +613,6 @@ export const updateProject = createAsyncThunk(
 
           if (countError) throw countError;
         } else {
-          // Reset team_members_count if no collaborators
           const { error: countError } = await supabase
             .from("projects")
             .update({ team_members_count: 0 })
@@ -606,6 +686,7 @@ export const updateProject = createAsyncThunk(
         collaborators: formattedCollaborators,
       };
     } catch (error: any) {
+      console.error("Error in updateProject:", error);
       return rejectWithValue(error.message);
     }
   }
@@ -664,6 +745,7 @@ export const addCollaborator = createAsyncThunk(
 
       return { projectId, userId };
     } catch (error: any) {
+      console.error("Error in addCollaborator:", error); // Debug log
       return rejectWithValue(error.message);
     }
   }
@@ -703,6 +785,7 @@ export const removeCollaborator = createAsyncThunk(
 
       return { projectId, userId };
     } catch (error: any) {
+      console.error("Error in removeCollaborator:", error); // Debug log
       return rejectWithValue(error.message);
     }
   }
@@ -772,6 +855,7 @@ export const deleteProject = createAsyncThunk(
 
       return projectId;
     } catch (error: any) {
+      console.error("Error in deleteProject:", error); // Debug log
       return rejectWithValue(error.message);
     }
   }
