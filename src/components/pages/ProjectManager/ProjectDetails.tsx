@@ -130,8 +130,6 @@ const ProjectDetails: React.FC<ProjectDetailsProps> = ({
           ))}
         </div>
       )}
-
-     
     </div>
   );
 };
