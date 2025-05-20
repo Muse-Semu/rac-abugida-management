@@ -42,6 +42,8 @@ interface ProjectFormProps {
   setSelectedCollaborators: (collaborators: Collaborator[]) => void;
   selectedImages: File[];
   setSelectedImages: (images: File[]) => void;
+  existingImages?: { url: string; is_primary: boolean }[];
+  setExistingImages: (images: { url: string; is_primary: boolean }[]) => void;
   primaryImageIndex: number;
   setPrimaryImageIndex: (index: number) => void;
   currentUserId: string;
@@ -56,6 +58,8 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
   setSelectedCollaborators,
   selectedImages,
   setSelectedImages,
+  existingImages = [],
+  setExistingImages,
   primaryImageIndex,
   setPrimaryImageIndex,
   currentUserId,
@@ -73,12 +77,37 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
     }
   };
 
-  const handleRemoveImage = (index: number) => {
-    setSelectedImages(selectedImages.filter((_, i) => i !== index));
-    if (primaryImageIndex === index) {
-      setPrimaryImageIndex(0);
-    } else if (primaryImageIndex > index) {
-      setPrimaryImageIndex(primaryImageIndex - 1);
+  const handleRemoveImage = async (index: number, isExisting: boolean) => {
+    if (isExisting) {
+      const image = existingImages[index];
+      const fileName = image.url.split("/").pop();
+      if (fileName) {
+        const { error } = await supabase.storage
+          .from("project-images")
+          .remove([fileName]);
+        if (error) {
+          console.error("Failed to delete image from storage:", error.message);
+          toast({
+            title: "Error",
+            description: "Failed to delete image from storage",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+      setExistingImages(existingImages.filter((_, i) => i !== index));
+      if (primaryImageIndex === index) {
+        setPrimaryImageIndex(0);
+      } else if (primaryImageIndex > index) {
+        setPrimaryImageIndex(primaryImageIndex - 1);
+      }
+    } else {
+      setSelectedImages(selectedImages.filter((_, i) => i !== index));
+      if (primaryImageIndex === index + existingImages.length) {
+        setPrimaryImageIndex(0);
+      } else if (primaryImageIndex > index + existingImages.length) {
+        setPrimaryImageIndex(primaryImageIndex - 1);
+      }
     }
   };
 
@@ -117,24 +146,40 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
         return;
       }
 
-      const imageUrls = await Promise.all(
-        selectedImages.map(async (file) => {
-          const fileExt = file.name.split(".").pop();
-          const fileName = `${Date.now()}-${Math.random()
-            .toString(36)
-            .slice(2)}.${fileExt}`;
-          const { data, error } = await supabase.storage
-            .from("project-images")
-            .upload(fileName, file);
+      // Clone existingImages to ensure mutability
+      const imageUrls: { url: string; is_primary: boolean }[] =
+        existingImages.map((img) => ({
+          url: img.url,
+          is_primary: img.is_primary,
+        }));
 
-          if (error)
-            throw new Error(`Failed to upload image: ${error.message}`);
-          const { data: publicUrlData } = supabase.storage
-            .from("project-images")
-            .getPublicUrl(data.path);
-          return publicUrlData.publicUrl;
-        })
-      );
+      // Upload new images
+      for (let i = 0; i < selectedImages.length; i++) {
+        const file = selectedImages[i];
+        const fileExt = file.name.split(".").pop();
+        const fileName = `${isEditing || Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2)}.${fileExt}`;
+        const { data, error } = await supabase.storage
+          .from("project-images")
+          .upload(fileName, file, { upsert: true });
+
+        if (error) {
+          console.error("Image upload error:", error.message);
+          throw new Error(`Failed to upload image: ${file.name}`);
+        }
+        const publicUrl = supabase.storage
+          .from("project-images")
+          .getPublicUrl(data.path).data.publicUrl;
+        imageUrls.push({ url: publicUrl, is_primary: false });
+      }
+
+      // Update primary image status
+      if (imageUrls.length > 0) {
+        imageUrls.forEach((img, index) => {
+          img.is_primary = index === primaryImageIndex;
+        });
+      }
 
       const formattedData = {
         ...formData,
@@ -142,6 +187,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
         end_date: new Date(formData.end_date).toISOString(),
         budget: Number(formData.budget) || 0,
         project_target: Number(formData.project_target) || 0,
+        images: imageUrls,
       };
 
       const projectData = {
@@ -160,10 +206,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
         project_target_type: formattedData.project_target_type || "Revenue",
         project_manager_id: formattedData.project_manager_id || "",
         owner_id: currentUserId,
-        images: imageUrls.map((url, index) => ({
-          url,
-          is_primary: index === primaryImageIndex,
-        })),
+        images: formattedData.images,
         collaborators: selectedCollaborators,
       } as Omit<
         Project,
@@ -194,6 +237,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
 
       resetForm();
     } catch (error: any) {
+      console.error("Submission error:", error.message);
       toast({
         title: "Error",
         description:
@@ -205,7 +249,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
   };
 
   return (
-    <DialogContent className="max-w-4xl bg-white rounded-2xl shadow-xl">
+    <DialogContent className="max-w-6xl  bg-white rounded-2xl shadow-xl">
       <DialogHeader>
         <DialogTitle className="text-2xl font-semibold text-gray-900">
           {isEditing ? "Edit Project" : "Create New Project"}
@@ -217,7 +261,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
         </DialogDescription>
       </DialogHeader>
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid   md:grid-cols gap-6">
           <div className="space-y-2">
             <Label htmlFor="name" className="text-sm font-medium text-gray-700">
               Name
@@ -596,36 +640,78 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
               className="border-gray-300 focus:ring-teal-500 focus:border-teal-500"
             />
             <div className="grid grid-cols-4 gap-3 mt-2">
+              {existingImages.length > 0
+                ? existingImages.map((image, index) => (
+                    <div key={`existing-${index}`} className="relative group">
+                      <img
+                        src={image.url}
+                        alt={`Existing image ${index + 1}`}
+                        className={`w-full h-28 object-cover rounded-lg transition-transform duration-300 group-hover:scale-105 ${
+                          index === primaryImageIndex
+                            ? "ring-2 ring-teal-500"
+                            : ""
+                        }`}
+                        onClick={() => setPrimaryImageIndex(index)}
+                        onError={(e) => {
+                          e.currentTarget.src =
+                            "https://via.placeholder.com/120x90?text=Image+Not+Found";
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveImage(index, true)}
+                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        ×
+                      </button>
+                      {index === primaryImageIndex && (
+                        <div className="absolute bottom-1 left-1 bg-teal-500 text-white text-xs px-2 py-0.5 rounded">
+                          Primary
+                        </div>
+                      )}
+                    </div>
+                  ))
+                : null}
               {selectedImages.map((image, index) => (
-                <div key={index} className="relative group">
+                <div key={`new-${index}`} className="relative group">
                   <img
                     src={URL.createObjectURL(image)}
                     alt={`Preview ${index + 1}`}
                     className={`w-full h-28 object-cover rounded-lg transition-transform duration-300 group-hover:scale-105 ${
-                      index === primaryImageIndex ? "ring-2 ring-teal-500" : ""
+                      index + existingImages.length === primaryImageIndex
+                        ? "ring-2 ring-teal-500"
+                        : ""
                     }`}
-                    onClick={() => setPrimaryImageIndex(index)}
+                    onClick={() =>
+                      setPrimaryImageIndex(index + existingImages.length)
+                    }
                   />
                   <button
                     type="button"
-                    onClick={() => handleRemoveImage(index)}
+                    onClick={() => handleRemoveImage(index, false)}
                     className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     ×
                   </button>
-                  {index === primaryImageIndex && (
+                  {index + existingImages.length === primaryImageIndex && (
                     <div className="absolute bottom-1 left-1 bg-teal-500 text-white text-xs px-2 py-0.5 rounded">
                       Primary
                     </div>
                   )}
                 </div>
               ))}
+              {existingImages.length === 0 && selectedImages.length === 0 && (
+                <p className="text-gray-500 text-sm col-span-4">
+                  No images uploaded.
+                </p>
+              )}
             </div>
           </div>
         </div>
         <div className="flex justify-end space-x-4 mt-6">
           <Button
-            type="button"
+            type
+            script
             variant="outline"
             onClick={resetForm}
             className="border-gray-300 text-gray-700 hover:bg-gray-100"
