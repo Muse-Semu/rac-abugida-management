@@ -17,23 +17,23 @@ interface ProjectImage {
 interface Project {
   id: number;
   name: string;
-  description: string;
-  status: "Active" | "Completed" | "On Hold" | "Cancelled";
+  description: string | null;
+  status: "Active" | "Completed" | "On Hold" | "Cancelled" | null;
   start_date: string;
-  end_date: string;
-  budget: number;
-  progress_percentage: number;
-  tags: string[];
-  team_members_count: number;
+  end_date: string | null;
+  budget: number | null;
+  progress_percentage: number | null;
+  tags: string[] | null;
+  team_members_count: number | null;
   max_team_members: number | null;
-  is_archived: boolean;
-  project_type: "Internal" | "External";
-  project_target: number;
-  project_target_type: "Revenue" | "Cost";
-  project_manager_id: string;
-  owner_id: string;
-  created_at: string;
-  updated_at: string;
+  is_archived: boolean | null;
+  project_type: "Internal" | "External" | null;
+  project_target: number | null;
+  project_target_type: "Revenue" | "Cost" | null;
+  project_manager_id: string | null;
+  owner_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
   images: ProjectImage[];
   collaborators: Collaborator[];
 }
@@ -99,6 +99,7 @@ export const fetchProjects = createAsyncThunk(
       if (imagesError) throw imagesError;
 
       // Fetch project collaborators with role information
+      // Note: If project_collaborators table is removed, delete this block
       const { data: collaborators, error: collaboratorsError } = await supabase
         .from("project_collaborators")
         .select("project_id, user_id, role_id, roles(role_name)");
@@ -137,7 +138,7 @@ export const fetchProjects = createAsyncThunk(
         }
         acc[img.project_id].push({
           url: img.image_url,
-          is_primary: img.is_primary,
+          is_primary: img.is_primary ?? false,
         });
         return acc;
       }, {} as Record<number, ProjectImage[]>);
@@ -251,6 +252,14 @@ export const createProject = createAsyncThunk(
 
       // Handle images
       if (validatedImages.length > 0) {
+        // Reset any existing primary images (precautionary)
+        const { error: resetError } = await supabase
+          .from("project_images")
+          .update({ is_primary: false })
+          .eq("project_id", project.id);
+        if (resetError) throw resetError;
+
+        // Insert new images
         const { error: imagesError } = await supabase
           .from("project_images")
           .insert(
@@ -258,13 +267,14 @@ export const createProject = createAsyncThunk(
               project_id: project.id,
               image_url: img.url,
               is_primary: img.is_primary,
+              uploaded_at: new Date().toISOString(),
             }))
           );
 
         if (imagesError) throw imagesError;
       }
 
-      // Handle collaborators
+      // Handle collaborators (remove this block if project_collaborators table is deprecated)
       if (collaborators && collaborators.length > 0) {
         // Validate collaborators
         const { data: validUsers, error: userError } = await supabase
@@ -336,7 +346,7 @@ export const createProject = createAsyncThunk(
 
       if (imagesError) throw imagesError;
 
-      // Fetch collaborators
+      // Fetch collaborators (remove this block if project_collaborators table is deprecated)
       const { data: projectCollaborators, error: collaboratorsError } =
         await supabase
           .from("project_collaborators")
@@ -378,7 +388,7 @@ export const createProject = createAsyncThunk(
         ...completeProject,
         images: projectImages.map((img) => ({
           url: img.image_url,
-          is_primary: img.is_primary,
+          is_primary: img.is_primary ?? false,
         })),
         collaborators: formattedCollaborators,
       };
@@ -436,7 +446,7 @@ export const updateProject = createAsyncThunk(
       // Extract images and collaborators
       const { images, collaborators, ...projectFields } = projectData;
 
-      // Update project
+      // Update project fields
       const { data: updatedProject, error: updateError } = await supabase
         .from("projects")
         .update(projectFields)
@@ -448,15 +458,7 @@ export const updateProject = createAsyncThunk(
 
       // Handle images
       if (images !== undefined) {
-        // Fetch existing images
-        const { data: existingImages, error: fetchImagesError } = await supabase
-          .from("project_images")
-          .select("id, image_url, is_primary")
-          .eq("project_id", projectId);
-
-        if (fetchImagesError) throw fetchImagesError;
-
-        // Validate new images: ensure only one is_primary
+        // Validate images: ensure only one is_primary
         let validatedImages = images || [];
         const primaryCount = validatedImages.filter(
           (img) => img.is_primary
@@ -467,8 +469,7 @@ export const updateProject = createAsyncThunk(
           );
           validatedImages = validatedImages.map((img, index) => ({
             ...img,
-            is_primary:
-              index === validatedImages.findIndex((i) => i.is_primary),
+            is_primary: index === validatedImages.findIndex((i) => i.is_primary),
           }));
         } else if (primaryCount === 0 && validatedImages.length > 0) {
           console.warn(
@@ -480,37 +481,55 @@ export const updateProject = createAsyncThunk(
           }));
         }
 
-        // Determine images to keep, add, or remove
-        const imagesToKeep = existingImages.filter((existing) =>
-          validatedImages.some((newImg) => newImg.url === existing.image_url)
-        );
-        const imagesToRemove = existingImages.filter(
-          (existing) =>
-            !validatedImages.some((newImg) => newImg.url === existing.image_url)
-        );
-        const imagesToAdd = validatedImages.filter(
-          (newImg) =>
-            !existingImages.some(
-              (existing) => existing.image_url === newImg.url
-            )
-        );
+        // Log existing images before update
+        const { data: existingImagesBefore } = await supabase
+          .from("project_images")
+          .select("id, image_url, is_primary")
+          .eq("project_id", projectId);
+        console.log("Existing images before update:", existingImagesBefore);
 
-        // Delete removed images
-        if (imagesToRemove.length > 0) {
-          const { error: deleteError } = await supabase
+        // Log images to be applied
+        console.log("Images to apply:", validatedImages);
+
+        // Collect URLs to delete from storage
+        const deletedUrls = existingImagesBefore?.map((img) => img.image_url) || [];
+
+        // Delete all existing images for the project
+        const { error: deleteImagesError } = await supabase
+          .from("project_images")
+          .delete()
+          .eq("project_id", projectId);
+
+        if (deleteImagesError) throw deleteImagesError;
+
+        // Insert new images
+        if (validatedImages.length > 0) {
+          const imagesToInsert = validatedImages.map((img, index) => ({
+            project_id: projectId,
+            image_url: img.url,
+            is_primary: img.is_primary,
+            uploaded_at: new Date().toISOString(),
+          }));
+
+          const { error: insertImagesError } = await supabase
             .from("project_images")
-            .delete()
-            .in(
-              "id",
-              imagesToRemove.map((img) => img.id)
-            );
+            .insert(imagesToInsert);
 
-          if (deleteError) throw deleteError;
+          if (insertImagesError) throw insertImagesError;
+        }
 
-          // Delete from storage
-          const paths = imagesToRemove
-            .map((img) => {
-              const urlParts = img.image_url.split("/project-images/");
+        // Log images after update
+        const { data: updatedImages } = await supabase
+          .from("project_images")
+          .select("id, image_url, is_primary")
+          .eq("project_id", projectId);
+        console.log("Images after update:", updatedImages);
+
+        // Delete removed images from storage
+        if (deletedUrls.length > 0) {
+          const paths = deletedUrls
+            .map((url) => {
+              const urlParts = url.split("/project-images/");
               return urlParts.length > 1 ? urlParts[1] : null;
             })
             .filter((path) => path);
@@ -518,44 +537,17 @@ export const updateProject = createAsyncThunk(
             const { error: storageError } = await supabase.storage
               .from("project-images")
               .remove(paths);
-            if (storageError)
+            if (storageError) {
               console.warn(
                 "Failed to delete some images from storage:",
                 storageError
               );
+            }
           }
-        }
-
-        // Update is_primary for kept images
-        for (const keptImage of imagesToKeep) {
-          const newImage = validatedImages.find(
-            (img) => img.url === keptImage.image_url
-          );
-          if (newImage && newImage.is_primary !== keptImage.is_primary) {
-            const { error: updateError } = await supabase
-              .from("project_images")
-              .update({ is_primary: newImage.is_primary })
-              .eq("id", keptImage.id);
-            if (updateError) throw updateError;
-          }
-        }
-
-        // Insert new images
-        if (imagesToAdd.length > 0) {
-          const { error: insertError } = await supabase
-            .from("project_images")
-            .insert(
-              imagesToAdd.map((img) => ({
-                project_id: projectId,
-                image_url: img.url,
-                is_primary: img.is_primary,
-              }))
-            );
-          if (insertError) throw insertError;
         }
       }
 
-      // Handle collaborators (unchanged)
+      // Handle collaborators
       if (collaborators !== undefined) {
         const { error: deleteError } = await supabase
           .from("project_collaborators")
@@ -681,7 +673,7 @@ export const updateProject = createAsyncThunk(
         ...completeProject,
         images: projectImages.map((img) => ({
           url: img.image_url,
-          is_primary: img.is_primary,
+          is_primary: img.is_primary ?? false,
         })),
         collaborators: formattedCollaborators,
       };
@@ -691,7 +683,6 @@ export const updateProject = createAsyncThunk(
     }
   }
 );
-
 export const addCollaborator = createAsyncThunk(
   "projects/addCollaborator",
   async (
@@ -837,7 +828,7 @@ export const deleteProject = createAsyncThunk(
 
       if (imagesError) throw imagesError;
 
-      // Delete project collaborators
+      // Delete project collaborators (remove this block if project_collaborators table is deprecated)
       const { error: collaboratorsError } = await supabase
         .from("project_collaborators")
         .delete()
