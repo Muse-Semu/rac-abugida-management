@@ -74,6 +74,10 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
     if (e.target.files) {
       const newImages = Array.from(e.target.files);
       setSelectedImages([...selectedImages, ...newImages]);
+      // Set primary image to the first new image if no primary exists
+      if (primaryImageIndex < 0 && (existingImages.length + selectedImages.length) === 0) {
+        setPrimaryImageIndex(existingImages.length);
+      }
     }
   };
 
@@ -95,17 +99,23 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
           return;
         }
       }
-      setExistingImages(existingImages.filter((_, i) => i !== index));
-      if (primaryImageIndex === index) {
-        setPrimaryImageIndex(0);
-      } else if (primaryImageIndex > index) {
+      const newExistingImages = existingImages.filter((_, i) => i !== index);
+      setExistingImages(newExistingImages);
+      // Adjust primaryImageIndex
+      const totalImages = newExistingImages.length + selectedImages.length;
+      if (index === primaryImageIndex) {
+        setPrimaryImageIndex(totalImages > 0 ? 0 : -1);
+      } else if (index < primaryImageIndex) {
         setPrimaryImageIndex(primaryImageIndex - 1);
       }
     } else {
-      setSelectedImages(selectedImages.filter((_, i) => i !== index));
-      if (primaryImageIndex === index + existingImages.length) {
-        setPrimaryImageIndex(0);
-      } else if (primaryImageIndex > index + existingImages.length) {
+      const newSelectedImages = selectedImages.filter((_, i) => i !== index);
+      setSelectedImages(newSelectedImages);
+      // Adjust primaryImageIndex
+      const totalImages = existingImages.length + newSelectedImages.length;
+      if (index + existingImages.length === primaryImageIndex) {
+        setPrimaryImageIndex(totalImages > 0 ? 0 : -1);
+      } else if (index + existingImages.length < primaryImageIndex) {
         setPrimaryImageIndex(primaryImageIndex - 1);
       }
     }
@@ -146,12 +156,14 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
         return;
       }
 
-      // Clone existingImages to ensure mutability
-      const imageUrls: { url: string; is_primary: boolean }[] =
-        existingImages.map((img) => ({
-          url: img.url,
-          is_primary: false, // Reset all to false initially
-        }));
+      // Combine existing and new images
+      const imageUrls: { url: string; is_primary: boolean }[] = [];
+
+      // Add existing images
+      imageUrls.push(...existingImages.map((img) => ({
+        url: img.url,
+        is_primary: false,
+      })));
 
       // Upload new images
       for (let i = 0; i < selectedImages.length; i++) {
@@ -187,16 +199,8 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
         }
       }
 
-      // Ensure exactly one primary image (or none if no images)
-      const primaryCount = imageUrls.filter((img) => img.is_primary).length;
-      if (primaryCount > 1) {
-        console.warn("Multiple primary images detected. Fixing...");
-        imageUrls.forEach((img, index) => {
-          img.is_primary = index === primaryImageIndex;
-        });
-      }
-
-      console.log("Submitting images:", JSON.stringify(imageUrls, null, 2));
+      // Log the final image payload
+      console.log("Final image payload:", JSON.stringify(imageUrls, null, 2));
 
       const formattedData = {
         ...formData,
@@ -671,7 +675,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
                         onClick={() => setPrimaryImageIndex(index)}
                         onError={(e) => {
                           e.currentTarget.src =
-                            "https://via.placeholder.com/120x90?text=Image+Not+Found";
+                            "/placeholder-image.jpg"; // Use a local fallback
                         }}
                       />
                       <button
