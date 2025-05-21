@@ -96,6 +96,16 @@ CREATE TABLE project_images (
     UNIQUE(project_id, is_primary) -- Ensures only one primary image per project
 );
 
+CREATE TABLE project_collaborators (
+    id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    role_id INTEGER REFERENCES roles(id) ON DELETE RESTRICT,
+    assigned_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, user_id)
+);
+
+
 -- Event collaborators (junction table for user-event collaboration)
 CREATE TABLE event_collaborators (
     id SERIAL PRIMARY KEY,
@@ -107,14 +117,6 @@ CREATE TABLE event_collaborators (
 );
 
 -- Project collaborators (junction table for user-project collaboration)
-CREATE TABLE project_collaborators (
-    id SERIAL PRIMARY KEY,
-    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-    role_id INTEGER REFERENCES roles(id) ON DELETE RESTRICT,
-    assigned_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(project_id, user_id)
-);
 
 -- Dashboard metrics table for aggregated metrics
 CREATE TABLE dashboard_metrics (
