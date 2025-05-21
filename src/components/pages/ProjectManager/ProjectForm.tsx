@@ -150,7 +150,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
       const imageUrls: { url: string; is_primary: boolean }[] =
         existingImages.map((img) => ({
           url: img.url,
-          is_primary: img.is_primary,
+          is_primary: false, // Reset all to false initially
         }));
 
       // Upload new images
@@ -174,12 +174,29 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
         imageUrls.push({ url: publicUrl, is_primary: false });
       }
 
-      // Update primary image status
+      // Validate primaryImageIndex
       if (imageUrls.length > 0) {
+        if (primaryImageIndex < 0 || primaryImageIndex >= imageUrls.length) {
+          console.warn(
+            `Invalid primaryImageIndex (${primaryImageIndex}). Setting to 0.`
+          );
+          setPrimaryImageIndex(0);
+          imageUrls[0].is_primary = true;
+        } else {
+          imageUrls[primaryImageIndex].is_primary = true;
+        }
+      }
+
+      // Ensure exactly one primary image (or none if no images)
+      const primaryCount = imageUrls.filter((img) => img.is_primary).length;
+      if (primaryCount > 1) {
+        console.warn("Multiple primary images detected. Fixing...");
         imageUrls.forEach((img, index) => {
           img.is_primary = index === primaryImageIndex;
         });
       }
+
+      console.log("Submitting images:", JSON.stringify(imageUrls, null, 2));
 
       const formattedData = {
         ...formData,
@@ -249,7 +266,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
   };
 
   return (
-    <DialogContent className="max-w-6xl  bg-white rounded-2xl shadow-xl">
+    <DialogContent className="max-w-6xl bg-white rounded-2xl shadow-xl">
       <DialogHeader>
         <DialogTitle className="text-2xl font-semibold text-gray-900">
           {isEditing ? "Edit Project" : "Create New Project"}
@@ -261,7 +278,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
         </DialogDescription>
       </DialogHeader>
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid   md:grid-cols gap-6">
+        <div className="grid md:grid-cols gap-6">
           <div className="space-y-2">
             <Label htmlFor="name" className="text-sm font-medium text-gray-700">
               Name
@@ -710,8 +727,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
         </div>
         <div className="flex justify-end space-x-4 mt-6">
           <Button
-            type
-            script
+            type="button"
             variant="outline"
             onClick={resetForm}
             className="border-gray-300 text-gray-700 hover:bg-gray-100"
