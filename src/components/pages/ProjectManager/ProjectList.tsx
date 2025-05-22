@@ -439,9 +439,7 @@ const ProjectList: React.FC = () => {
                             });
                           }}
                         />
-                        <div className="absolute -top-1 -right-1 bg-teal-500 text-white text-xs px-1.5 py-0.5 rounded-full">
-                          Primary
-                        </div>
+                       
                       </div>
                       <div className="flex-1">
                         <h3 className="text-lg font-semibold text-gray-900 truncate">
